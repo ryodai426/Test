@@ -799,9 +799,9 @@
     detail: renderDetail,
   };
 
-  function showScreen(name, arg, scrollY = 0) {
+  function showScreen(name, arg) {
     app.replaceChildren(screens[name](arg));
-    window.scrollTo(0, scrollY);
+    window.scrollTo(0, 0);
   }
 
   function renderName() {
@@ -1071,8 +1071,8 @@
     return section;
   }
 
-  // 発明年表：生まれる年の古い順。同じ年は記録した順。「いま」の線を入れる
-  function renderTimeline() {
+  // 発明年表：下が古く、上へいくほど未来。同じ年は記録した順に下から積む。「いま」の線を入れる
+  function renderTimeline(arg) {
     const header = el('h2', { class: 'page-title', text: '発明年表' });
     const homeButton = button('ホームへ', 'secondary', () => showScreen('home'));
 
@@ -1090,18 +1090,18 @@
       ]);
     }
 
-    const list = state.inventions.slice().sort((a, b) => a.year - b.year || a.no - b.no);
-    const minYear = list[0].year;
-    const maxYear = list[list.length - 1].year;
+    const list = state.inventions.slice().sort((a, b) => b.year - a.year || b.no - a.no);
+    const maxYear = list[0].year;
+    const minYear = list[list.length - 1].year;
     const now = thisYear();
     const range = minYear === maxYear ? `${minYear}年` : `${minYear}年 〜 ${maxYear}年`;
 
-    const nowLine = () => el('li', { class: 'now-line' }, [el('span', { text: `いま ${now}年` })]);
+    const nowLine = el('li', { class: 'now-line' }, [el('span', { text: `いま ${now}年` })]);
     const items = [];
     let nowPlaced = false;
     for (const inv of list) {
-      if (!nowPlaced && inv.year > now) {
-        items.push(nowLine());
+      if (!nowPlaced && inv.year <= now) {
+        items.push(nowLine);
         nowPlaced = true;
       }
       const open = el('button', { type: 'button', class: 'entry-button' }, [
@@ -1111,7 +1111,14 @@
       open.addEventListener('click', () => showScreen('detail', { no: inv.no, returnY: window.scrollY }));
       items.push(el('li', { class: `entry${inv.year < now ? ' is-past' : ''}` }, [open]));
     }
-    if (!nowPlaced) items.push(nowLine());
+    if (!nowPlaced) items.push(nowLine);
+
+    // 開いたときは「いま」の線を画面に入れる。詳細から戻ったときは元の位置へ
+    requestAnimationFrame(() => {
+      if (!nowLine.isConnected) return;
+      if (arg) window.scrollTo(0, arg.returnY);
+      else nowLine.scrollIntoView({ block: 'center' });
+    });
 
     return el('section', { class: 'screen' }, [
       header,
@@ -1143,7 +1150,7 @@
         ]),
       ]),
       el('div', { class: 'btn-group' }, [
-        button('発明年表へ戻る', 'primary', () => showScreen('timeline', undefined, returnY)),
+        button('発明年表へ戻る', 'primary', () => showScreen('timeline', { returnY })),
         button('ホームへ', 'secondary', () => showScreen('home')),
       ]),
     ]);
