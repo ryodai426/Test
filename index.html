@@ -376,6 +376,113 @@
   .sentence { margin: 0; font-size: 17px; line-height: 1.9; }
   .sentence .year { font-weight: bold; margin-right: 0.6em; color: var(--accent); }
 
+  /* 発明年表：真鍮のパイプに沿って並べる */
+  .page-title { margin: 0; font-size: 28px; font-weight: bold; text-align: center; letter-spacing: 0.12em; color: #3A3A3A; }
+  .page-title::before, .page-title::after { content: "⚙"; margin: 0 0.4em; font-size: 0.6em; vertical-align: 0.2em; }
+  .range { margin: -8px 0 0; text-align: center; color: var(--sub); font-size: 15px; }
+  .empty { flex: 1; display: flex; flex-direction: column; justify-content: center; text-align: center; font-size: 17px; }
+  .empty p { margin: 0; }
+  .timeline {
+    flex: 1;
+    position: relative;
+    margin: 0;
+    padding: 4px 0 4px 34px;
+    list-style: none;
+  }
+  .timeline::before {
+    content: "";
+    position: absolute;
+    left: 11px; top: 0; bottom: 0;
+    width: 8px;
+    border-radius: 4px;
+    background: linear-gradient(90deg, #6B4A16 0%, #F6DE95 40%, #C99A38 60%, #6B4A16 100%);
+    box-shadow: 0 1px 3px rgba(60, 35, 10, 0.4);
+  }
+  .entry { position: relative; margin: 0 0 12px; }
+  .entry::before {
+    content: "";
+    position: absolute;
+    left: -32px; top: 50%;
+    width: 22px; height: 22px;
+    margin-top: -11px;
+    background: var(--gear-brass) center / contain no-repeat;
+    filter: drop-shadow(0 1px 1px rgba(60, 35, 10, 0.5));
+  }
+  .entry-button {
+    display: block;
+    width: 100%;
+    padding: 10px 14px;
+    font: inherit;
+    text-align: left;
+    color: var(--ink);
+    background: rgba(255, 250, 235, 0.7);
+    border: 2px solid #A58350;
+    border-radius: 8px;
+    box-shadow: 0 2px 0 #A58350;
+    cursor: pointer;
+    overflow-wrap: anywhere;
+    transition: transform 0.15s, background 0.15s;
+  }
+  .entry-button:active { transform: translateY(2px); box-shadow: none; }
+  @media (hover: hover) {
+    .entry-button:hover { background: #FFF8E6; }
+  }
+  .entry-button .sentence { display: block; font-size: 16px; line-height: 1.7; }
+  .entry-no { display: block; font-size: 13px; color: var(--sub); }
+  .entry.is-past .entry-button { background: rgba(230, 214, 180, 0.6); }
+  .entry.is-past::before { filter: grayscale(0.6) drop-shadow(0 1px 1px rgba(60, 35, 10, 0.5)); }
+  /* 「いま」の線：銅色の目盛り */
+  .now-line {
+    position: relative;
+    margin: 4px 0 16px -34px;
+    height: 0;
+    border-top: 3px dashed var(--copper);
+  }
+  .now-line span {
+    position: absolute;
+    right: 0; top: -15px;
+    padding: 2px 12px;
+    font-size: 14px;
+    font-weight: bold;
+    color: #FFEBC8;
+    background: var(--copper);
+    border-radius: 14px;
+    box-shadow: 0 2px 4px rgba(60, 35, 10, 0.35);
+  }
+
+  /* 発明のくわしい内容：特許証風 */
+  .certificate {
+    flex: 1;
+    padding: 22px 18px;
+    background: radial-gradient(ellipse at 50% 30%, #FFFBEF 0%, #F3E4C0 100%);
+    border: 3px double var(--brass-lo);
+    outline: 1px solid #A58350;
+    outline-offset: -9px;
+    border-radius: 6px;
+    box-shadow: 0 6px 16px rgba(60, 35, 10, 0.25);
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .cert-no {
+    margin: 0 auto;
+    padding: 6px 28px;
+    font-size: 24px;
+    font-weight: bold;
+    color: #3A2410;
+    background:
+      var(--rivet) left 8px center / 9px 9px no-repeat,
+      var(--rivet) right 8px center / 9px 9px no-repeat,
+      linear-gradient(180deg, #F6DE95 0%, #D4A945 45%, #A87A22 56%, #C99A38 100%);
+    border: 2px solid var(--brass-lo);
+    border-radius: 8px;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.55);
+  }
+  .certificate .odai { font-size: 20px; }
+  .cert-list { margin: 0; display: flex; flex-direction: column; gap: 12px; }
+  .cert-row { border-top: 1px solid rgba(107, 74, 22, 0.3); padding-top: 10px; }
+  .cert-row dt { font-size: 13px; color: var(--sub); }
+  .cert-row dd { margin: 2px 0 0; font-size: 17px; overflow-wrap: anywhere; }
+  .cert-description { white-space: pre-wrap; }
+
   /* 確認ダイアログ */
   .modal-backdrop {
     position: fixed; inset: 0; z-index: 20;
@@ -661,11 +768,23 @@
 
   const odaiText = (words) => POS.map((p) => words[p]).join('');
 
-  function inventionSentence(inv) {
-    return el('p', { class: 'sentence' }, [
+  const thisYear = () => new Date().getFullYear();
+
+  // 今年より前の年は「発明した」、今年以降は「発明する」
+  const inventVerb = (year) => (year < thisYear() ? '発明した' : '発明する');
+
+  function inventionSentence(inv, tag = 'p') {
+    return el(tag, { class: 'sentence' }, [
       el('span', { class: 'year', text: `${inv.year}年` }),
-      `${state.userName} が「${odaiText(inv.words)}」を発明する`,
+      `${state.userName} が「${odaiText(inv.words)}」を${inventVerb(inv.year)}`,
     ]);
+  }
+
+  function formatDateTime(iso) {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
   // 全角数字を半角にし、数字以外を取り除く
@@ -676,11 +795,13 @@
     name: renderName,
     home: renderHome,
     game: renderGame,
+    timeline: renderTimeline,
+    detail: renderDetail,
   };
 
-  function showScreen(name) {
-    app.replaceChildren(screens[name]());
-    window.scrollTo(0, 0);
+  function showScreen(name, arg, scrollY = 0) {
+    app.replaceChildren(screens[name](arg));
+    window.scrollTo(0, scrollY);
   }
 
   function renderName() {
@@ -725,7 +846,6 @@
   }
 
   function renderHome() {
-    // 「発明年表」は段階4でつなぐ
     return el('section', { class: 'screen' }, [
       el('div', { class: 'home-hero' }, [
         el('div', { class: 'gears', 'aria-hidden': 'true' }, [
@@ -736,7 +856,7 @@
       ]),
       el('div', { class: 'btn-group' }, [
         button('はじめる', 'primary', () => showScreen('game')),
-        button('発明年表', 'secondary'),
+        button('発明年表', 'secondary', () => showScreen('timeline')),
       ]),
       el('p', { class: 'count', text: `これまでの発明：${state.inventions.length}` }),
     ]);
@@ -853,19 +973,19 @@
 
     // 何年にできそう？
     function askYear() {
-      const thisYear = new Date().getFullYear();
+      const startYear = thisYear();
       const input = el('input', {
         type: 'text',
         inputMode: 'numeric',
         autocomplete: 'off',
-        value: String(thisYear),
+        value: String(startYear),
         'aria-label': '年',
       });
       const record = button('発明する！', 'primary', submit);
       const steps = [-10, -1, 1, 10].map((d) => {
         const b = el('button', { type: 'button', class: 'step-btn', text: d > 0 ? `+${d}` : `−${-d}` });
         b.addEventListener('click', () => {
-          const base = readYear() ?? thisYear;
+          const base = readYear() ?? startYear;
           input.value = String(Math.min(YEAR_MAX, Math.max(YEAR_MIN, base + d)));
           update();
         });
@@ -935,8 +1055,7 @@
           inventionSentence(inv),
         ]),
         el('div', { class: 'btn-group' }, [
-          // 「発明年表を見る」は段階4でつなぐ
-          button('発明年表を見る', 'primary'),
+          button('発明年表を見る', 'primary', () => showScreen('timeline')),
           button('ホームへ', 'secondary', () => showScreen('home')),
         ]),
       );
@@ -950,6 +1069,84 @@
       footer,
     );
     return section;
+  }
+
+  // 発明年表：生まれる年の古い順。同じ年は記録した順。「いま」の線を入れる
+  function renderTimeline() {
+    const header = el('h2', { class: 'page-title', text: '発明年表' });
+    const homeButton = button('ホームへ', 'secondary', () => showScreen('home'));
+
+    if (state.inventions.length === 0) {
+      return el('section', { class: 'screen' }, [
+        header,
+        el('div', { class: 'empty' }, [
+          el('p', { text: 'まだ発明がありません。' }),
+          el('p', { text: '「はじめる」から作ってみよう。' }),
+        ]),
+        el('div', { class: 'btn-group' }, [
+          button('はじめる', 'primary', () => showScreen('game')),
+          homeButton,
+        ]),
+      ]);
+    }
+
+    const list = state.inventions.slice().sort((a, b) => a.year - b.year || a.no - b.no);
+    const minYear = list[0].year;
+    const maxYear = list[list.length - 1].year;
+    const now = thisYear();
+    const range = minYear === maxYear ? `${minYear}年` : `${minYear}年 〜 ${maxYear}年`;
+
+    const nowLine = () => el('li', { class: 'now-line' }, [el('span', { text: `いま ${now}年` })]);
+    const items = [];
+    let nowPlaced = false;
+    for (const inv of list) {
+      if (!nowPlaced && inv.year > now) {
+        items.push(nowLine());
+        nowPlaced = true;
+      }
+      const open = el('button', { type: 'button', class: 'entry-button' }, [
+        el('span', { class: 'entry-no', text: `No.${inv.no}` }),
+        inventionSentence(inv, 'span'),
+      ]);
+      open.addEventListener('click', () => showScreen('detail', { no: inv.no, returnY: window.scrollY }));
+      items.push(el('li', { class: `entry${inv.year < now ? ' is-past' : ''}` }, [open]));
+    }
+    if (!nowPlaced) items.push(nowLine());
+
+    return el('section', { class: 'screen' }, [
+      header,
+      el('p', { class: 'range', text: `${range}　発明 ${list.length}件` }),
+      el('ol', { class: 'timeline' }, items),
+      el('div', { class: 'btn-group' }, [homeButton]),
+    ]);
+  }
+
+  // 発明のくわしい内容（見るだけ。編集・削除はしない）
+  function renderDetail({ no, returnY }) {
+    const inv = state.inventions.find((v) => v.no === no);
+    if (!inv) return renderTimeline();
+
+    const row = (label, value) => el('div', { class: 'cert-row' }, [
+      el('dt', { text: label }),
+      el('dd', {}, [value]),
+    ]);
+
+    return el('section', { class: 'screen' }, [
+      el('article', { class: 'certificate' }, [
+        el('p', { class: 'cert-no', text: `発明No.${inv.no}` }),
+        odaiNode(inv.words, 'is-static'),
+        el('dl', { class: 'cert-list' }, [
+          row(`どんな${inv.words.noun}？`, el('span', { class: 'cert-description', text: inv.description })),
+          row('生まれる年', `${inv.year}年`),
+          row('発明した人', state.userName),
+          row('記録した日', formatDateTime(inv.createdAt)),
+        ]),
+      ]),
+      el('div', { class: 'btn-group' }, [
+        button('発明年表へ戻る', 'primary', () => showScreen('timeline', undefined, returnY)),
+        button('ホームへ', 'secondary', () => showScreen('home')),
+      ]),
+    ]);
   }
 
   // ---- 起動 ----
