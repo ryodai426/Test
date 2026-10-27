@@ -103,6 +103,7 @@
     font-weight: bold;
     text-align: center;
     letter-spacing: 0.06em;
+    color: #3A3A3A;
     text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7), 0 -1px 0 rgba(0, 0, 0, 0.3);
   }
   .title::before, .title::after {
@@ -111,14 +112,9 @@
     margin: 0 0.3em;
     font-size: 0.6em;
     vertical-align: 0.2em;
-    color: var(--brass-lo);
   }
   .home-hero .title::before, .home-hero .title::after { display: none; }
   .title-small { font-size: 22px; }
-  .t1 { color: var(--copper); }
-  .t2 { color: var(--brass); }
-  .t3 { color: var(--verdigris); }
-  .t4 { color: var(--steel); }
 
   /* ボタン：真鍮のプレート／木の板（左右にネジ） */
   .btn {
@@ -619,12 +615,7 @@
   }
 
   function title(extraClass = '') {
-    return el('h1', { class: `title ${extraClass}` }, [
-      el('span', { class: 't1', text: 'フュー' }),
-      el('span', { class: 't2', text: 'チャー' }),
-      el('span', { class: 't3', text: '日' }),
-      el('span', { class: 't4', text: '記' }),
-    ]);
+    return el('h1', { class: `title ${extraClass}`, text: 'フューチャー日記' });
   }
 
   function showNotice(message) {
