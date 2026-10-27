@@ -304,9 +304,7 @@
     margin: 0 1px;
     animation: pop 0.4s ease both;
   }
-  .odai-word:nth-child(2) { animation-delay: 0.12s; }
-  .odai-word:nth-child(3) { animation-delay: 0.24s; }
-  .odai-word:nth-child(4) { animation-delay: 0.36s; }
+  .odai-line { display: block; }
   .odai.is-static .odai-word { animation: none; }
   .odai.is-small { font-size: 18px; }
 
@@ -760,10 +758,15 @@
     cancel.focus();
   }
 
-  // お題の4語を、品詞の色の下線付きで並べる
+  // お題の4語を、品詞の色の下線付きで並べる。「副詞 動詞」「形容詞 名詞」の2行にする
   function odaiNode(words, extraClass = '') {
-    return el('p', { class: `odai ${extraClass}` },
-      POS.map((p) => el('span', { class: `odai-word pos-${p}`, text: words[p] })));
+    const word = (p, i) => {
+      const node = el('span', { class: `odai-word pos-${p}`, text: words[p] });
+      node.style.animationDelay = `${i * 0.12}s`;
+      return node;
+    };
+    const line = (i) => el('span', { class: 'odai-line' }, [word(POS[i], i), word(POS[i + 1], i + 1)]);
+    return el('p', { class: `odai ${extraClass}` }, [line(0), line(2)]);
   }
 
   const odaiText = (words) => POS.map((p) => words[p]).join('');
