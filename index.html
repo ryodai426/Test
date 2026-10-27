@@ -1,0 +1,802 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>フューチャー日記</title>
+<style>
+  :root {
+    --purple: #667eea;
+    --purple-deep: #764ba2;
+    --ink: #262626;
+    --sub: #888;
+    --red: #FF3B3B;
+    --yellow: #FFB001;
+    --green: #4DCF59;
+    --blue: #00B0F0;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Noto Sans JP", Meiryo, system-ui, sans-serif;
+    background: linear-gradient(135deg, var(--purple) 0%, var(--purple-deep) 100%);
+    background-attachment: fixed;
+    color: var(--ink);
+    line-height: 1.6;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  #app {
+    max-width: 520px;
+    min-height: calc(100vh - 40px);
+    min-height: calc(100dvh - 40px);
+    margin: 0 auto;
+    padding: 32px 24px;
+    background: #fff;
+    border-radius: 24px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+  }
+  .screen { flex: 1; display: flex; flex-direction: column; gap: 16px; }
+
+  /* 品詞ごとの色 */
+  .pos-adverb    { --c: var(--red);    --tint: #FFE8E8; }
+  .pos-verb      { --c: var(--yellow); --tint: #FFF4DC; }
+  .pos-adjective { --c: var(--green);  --tint: #E6F8E8; }
+  .pos-noun      { --c: var(--blue);   --tint: #DFF5FD; }
+
+  /* タイトル */
+  .title { margin: 0; font-size: 34px; font-weight: bold; text-align: center; letter-spacing: 0.04em; }
+  .title-small { font-size: 20px; }
+  .t1 { color: var(--red); }
+  .t2 { color: var(--yellow); }
+  .t3 { color: var(--green); }
+  .t4 { color: var(--blue); }
+
+  /* ボタン */
+  .btn {
+    width: 100%;
+    padding: 16px 24px;
+    font: inherit;
+    font-size: 19px;
+    font-weight: bold;
+    border: none;
+    border-radius: 50px;
+    cursor: pointer;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
+  }
+  .btn-primary { background: linear-gradient(135deg, var(--purple) 0%, var(--purple-deep) 100%); color: #fff; }
+  .btn-secondary { background: #f0f0f0; color: #333; }
+  .btn:active:not(:disabled) { transform: scale(0.97); }
+  .btn:disabled { opacity: 0.4; cursor: default; box-shadow: none; }
+  @media (hover: hover) {
+    .btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3); }
+  }
+  .btn-group { display: flex; flex-direction: column; gap: 14px; }
+
+  /* なまえ */
+  .question { margin: 24px 0 0; font-size: 24px; font-weight: bold; color: var(--purple); text-align: center; }
+  input[type="text"] {
+    width: 100%;
+    font: inherit;
+    font-size: 20px;
+    padding: 14px 18px;
+    border: 2px solid #ddd;
+    border-radius: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  input[type="text"]:focus { border-color: var(--purple); }
+  .field-message { min-height: 1.6em; margin: -8px 0 0; color: #d63031; font-size: 15px; text-align: center; }
+
+  /* ホーム */
+  .home-hero { flex: 1; display: flex; align-items: center; justify-content: center; }
+  .count { margin: 0; text-align: center; color: var(--sub); font-size: 15px; }
+
+  /* お題づくり */
+  .game-message { margin: 0; font-size: 20px; font-weight: bold; color: var(--purple); text-align: center; }
+  .slots { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .slot {
+    min-height: 48px;
+    padding: 6px 8px;
+    border: 2px dashed var(--c);
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; font-weight: bold; text-align: center;
+    color: var(--c);
+  }
+  .slot:empty::before { content: "？"; opacity: 0.4; }
+  .slot.is-filled {
+    border-style: solid;
+    background: var(--tint);
+    color: var(--ink);
+    animation: pop 0.4s ease;
+  }
+  .stage { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 8px 0; }
+
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; perspective: 900px; }
+  .card {
+    aspect-ratio: 3 / 4;
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    cursor: pointer;
+    animation: deal 0.45s ease backwards;
+    transition: transform 0.25s, opacity 0.35s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .card:disabled { cursor: default; }
+  .card-inner {
+    position: relative;
+    display: block;
+    width: 100%; height: 100%;
+    transform-style: preserve-3d;
+    transition: transform 0.6s cubic-bezier(0.3, 1.4, 0.5, 1);
+  }
+  .card-face {
+    position: absolute; inset: 0;
+    border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.2);
+  }
+  .card-back {
+    background:
+      radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.35), transparent 55%),
+      var(--c);
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 44px; font-weight: bold;
+  }
+  .card-back::after {
+    content: "";
+    position: absolute; inset: 7px;
+    border: 2px dashed rgba(255, 255, 255, 0.55);
+    border-radius: 9px;
+  }
+  .card-front {
+    transform: rotateY(180deg);
+    background: #fff;
+    border: 4px solid var(--c);
+    padding: 6px;
+    font-size: 17px; font-weight: bold; text-align: center;
+    color: var(--ink);
+  }
+  .card-front.is-long { font-size: 14px; }
+  .card.is-chosen { transform: translateY(-10px) scale(1.06); }
+  .card.is-chosen .card-inner { transform: rotateY(180deg); }
+  .card.is-dim { opacity: 0.3; transform: scale(0.9); }
+  @media (hover: hover) {
+    .card:not(:disabled):hover { transform: translateY(-6px) rotate(-2deg); }
+  }
+
+  .odai { margin: 0; font-size: 24px; font-weight: bold; text-align: center; line-height: 2; }
+  .odai-word {
+    display: inline-block;
+    border-bottom: 5px solid var(--c);
+    margin: 0 1px;
+    animation: pop 0.4s ease both;
+  }
+  .odai-word:nth-child(2) { animation-delay: 0.12s; }
+  .odai-word:nth-child(3) { animation-delay: 0.24s; }
+  .odai-word:nth-child(4) { animation-delay: 0.36s; }
+  .odai.is-static .odai-word { animation: none; }
+  .odai.is-small { font-size: 18px; }
+
+  /* どんな〇〇？・何年？ */
+  .ask { margin: 8px 0 0; font-size: 20px; font-weight: bold; text-align: center; color: var(--purple); }
+  textarea {
+    width: 100%;
+    min-height: 160px;
+    font: inherit;
+    font-size: 17px;
+    padding: 14px 16px;
+    border: 2px solid #ddd;
+    border-radius: 14px;
+    outline: none;
+    resize: vertical;
+    transition: border-color 0.2s;
+  }
+  textarea:focus { border-color: var(--purple); }
+  .year-display { display: flex; align-items: baseline; justify-content: center; gap: 8px; font-size: 22px; font-weight: bold; }
+  .year-display input[type="text"] { width: 4.6em; font-size: 34px; font-weight: bold; text-align: center; padding: 8px; }
+  .year-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .step-btn {
+    padding: 12px 0;
+    font: inherit;
+    font-size: 17px;
+    font-weight: bold;
+    border: none;
+    border-radius: 12px;
+    background: #f0f0f0;
+    color: #333;
+    cursor: pointer;
+  }
+  .step-btn:active:not(:disabled) { transform: scale(0.95); }
+  .step-btn:disabled { opacity: 0.4; cursor: default; }
+
+  /* 発明できた！ */
+  .done { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 20px; text-align: center; }
+  .done-title { margin: 0; font-size: 26px; font-weight: bold; color: var(--purple); }
+  .done-title strong { font-size: 34px; }
+  .sentence { margin: 0; font-size: 17px; line-height: 1.9; }
+  .sentence .year { font-weight: bold; margin-right: 0.6em; }
+
+  /* 確認ダイアログ */
+  .modal-backdrop {
+    position: fixed; inset: 0; z-index: 20;
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.5);
+  }
+  .modal {
+    width: 100%; max-width: 360px;
+    padding: 28px 20px 20px;
+    background: #fff;
+    border-radius: 20px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  }
+  .modal-text { margin: 0 0 20px; font-size: 18px; font-weight: bold; text-align: center; }
+  .modal-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .modal-buttons .btn { padding: 14px 8px; font-size: 17px; }
+
+  @keyframes deal {
+    from { opacity: 0; transform: translateY(40px) rotate(-8deg) scale(0.9); }
+    to   { opacity: 1; transform: none; }
+  }
+  @keyframes pop {
+    0%   { opacity: 0; transform: scale(0.6); }
+    70%  { opacity: 1; transform: scale(1.08); }
+    100% { transform: scale(1); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
+
+  /* お知らせ */
+  #notice {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+    padding: 10px 16px;
+    background: #d63031; color: #fff;
+    text-align: center; font-size: 15px;
+  }
+  #notice[hidden] { display: none; }
+
+  @media (max-width: 480px) {
+    body { padding: 12px; }
+    #app { min-height: calc(100vh - 24px); min-height: calc(100dvh - 24px); padding: 24px 16px; border-radius: 20px; }
+    .cards { gap: 10px; }
+  }
+</style>
+</head>
+<body>
+<div id="notice" role="alert" hidden></div>
+<main id="app"></main>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---- 語のプール ----
+  const POS = ['adverb', 'verb', 'adjective', 'noun'];
+  const WORDS = {
+    adverb: ['おそるおそる', '思い切って', 'まったり', 'いつも', 'いきなり', 'きちんと', 'もれなく', 'さらに', 'なぜか', 'こっそり', '思う存分', 'ほんとうに', 'はらはら', 'そろそろ', 'もうすぐ', 'ついに', 'もう少し', 'こんなに'],
+    verb: ['隠れる', '混ざる', '誘う', '奏でる', '育てる', 'のびる', '挑む', 'とめる', 'ときめく', '整う', '語る', 'かわる', 'かえる', '極める', 'うかがう', 'なごむ', 'おさめる', 'たずねる'],
+    adjective: ['ステキな', '熱心な', '粘り強い', '元気な', '丁寧な', 'のどかな', 'にぎやかな', 'なにげない', 'おくゆかしい', '気さくな', 'ひたむきな', '多感な', '手厳しい', '頑固な', '無邪気な', '潔い', '純粋な', '几帳面な'],
+    noun: ['自転車', '日記', '時計', '消しゴム', 'マンション', 'バッグ', 'ふせん', 'CD', 'カメラ', '机', '食器', '照明', 'キッチン', 'スニーカー', 'コップ', '椅子', 'ペン', '傘'],
+  };
+
+  // 同じお題に並べない組み合わせ（仮。段階6で語を増やすときに埋める）
+  const CONFLICTS = [
+    ['きちんと', '整う'],
+    ['きちんと', '几帳面な'],
+    ['きちんと', '丁寧な'],
+    ['整う', '几帳面な'],
+  ];
+
+  const CARD_COUNT = 3;
+  const FLIP_MS = 600;
+  const HOLD_MS = 1000;
+  const DESCRIPTION_MAX = 200;
+  const YEAR_MIN = 1;
+  const YEAR_MAX = 9999;
+
+  // ---- 保存 ----
+  const STORAGE_KEY = 'future-nikki.v1';
+  const BROKEN_KEY = 'future-nikki.v1.broken';
+  const NAME_MAX = 10;
+
+  function defaultData() {
+    return {
+      version: 1,
+      userName: '',
+      inventions: [],
+      recentWords: { adverb: [], verb: [], adjective: [], noun: [] },
+    };
+  }
+
+  const isStr = (v) => typeof v === 'string';
+
+  function isValidInvention(v) {
+    return v !== null && typeof v === 'object'
+      && Number.isInteger(v.no) && v.no >= 1
+      && v.words !== null && typeof v.words === 'object'
+      && POS.every((p) => isStr(v.words[p]))
+      && isStr(v.description)
+      && Number.isInteger(v.year)
+      && isStr(v.createdAt);
+  }
+
+  // 読み込んだ値を AppData の形にそろえる。欠けた・壊れた部分があれば damaged = true
+  function normalize(raw) {
+    const data = defaultData();
+    if (raw === null || typeof raw !== 'object' || raw.version !== 1) {
+      return { data, damaged: true };
+    }
+    let damaged = false;
+
+    if (isStr(raw.userName)) data.userName = raw.userName;
+    else if (raw.userName !== undefined) damaged = true;
+
+    if (Array.isArray(raw.inventions)) {
+      data.inventions = raw.inventions.filter(isValidInvention);
+      if (data.inventions.length !== raw.inventions.length) damaged = true;
+    } else if (raw.inventions !== undefined) {
+      damaged = true;
+    }
+
+    const rw = raw.recentWords;
+    if (rw !== null && typeof rw === 'object') {
+      for (const p of POS) {
+        if (Array.isArray(rw[p])) data.recentWords[p] = rw[p].filter(isStr);
+      }
+    }
+    return { data, damaged };
+  }
+
+  function load() {
+    let text;
+    try {
+      text = localStorage.getItem(STORAGE_KEY);
+    } catch (e) {
+      return defaultData();
+    }
+    if (text === null) return defaultData();
+
+    let result;
+    try {
+      result = normalize(JSON.parse(text));
+    } catch (e) {
+      result = { data: defaultData(), damaged: true };
+    }
+    if (result.damaged) {
+      // 壊れた中身は消さずに退避しておく
+      try { localStorage.setItem(BROKEN_KEY, text); } catch (e) { /* 退避できなくても起動は続ける */ }
+    }
+    return result.data;
+  }
+
+  function save() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      hideNotice();
+      return true;
+    } catch (e) {
+      showNotice('保存できませんでした');
+      return false;
+    }
+  }
+
+  // ---- 語の出し方 ----
+  function shuffle(list) {
+    const a = list.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  const recentLimit = (pos) => Math.floor(WORDS[pos].length / 3);
+
+  function conflictsWith(chosen) {
+    const blocked = new Set();
+    for (const [a, b] of CONFLICTS) {
+      if (chosen.includes(a)) blocked.add(b);
+      if (chosen.includes(b)) blocked.add(a);
+    }
+    return blocked;
+  }
+
+  // 直近の語・相性の悪い語を避けて3枚選ぶ。足りなければ条件をゆるめて補う
+  function drawCards(pos, chosen) {
+    const pool = WORDS[pos];
+    const recent = new Set(state.recentWords[pos]);
+    const blocked = conflictsWith(chosen);
+    const tiers = [
+      pool.filter((w) => !recent.has(w) && !blocked.has(w)),
+      pool.filter((w) => !blocked.has(w)),
+      pool,
+    ];
+    const picked = [];
+    for (const tier of tiers) {
+      for (const w of shuffle(tier)) {
+        if (picked.length === CARD_COUNT) return picked;
+        if (!picked.includes(w)) picked.push(w);
+      }
+    }
+    return picked;
+  }
+
+  function rememberWord(pos, word) {
+    const list = state.recentWords[pos].filter((w) => w !== word);
+    list.push(word);
+    state.recentWords[pos] = list.slice(-recentLimit(pos));
+    save();
+  }
+
+  // ---- 表示の道具（innerHTML は使わない） ----
+  const app = document.getElementById('app');
+  const notice = document.getElementById('notice');
+
+  function el(tag, props = {}, children = []) {
+    const node = document.createElement(tag);
+    for (const [key, value] of Object.entries(props)) {
+      if (key === 'text') node.textContent = value;
+      else if (key === 'class') node.className = value;
+      else if (key in node) node[key] = value;
+      else node.setAttribute(key, value);
+    }
+    for (const child of children) node.append(child);
+    return node;
+  }
+
+  function button(text, kind, onClick) {
+    const node = el('button', { type: 'button', class: `btn btn-${kind}`, text });
+    if (onClick) node.addEventListener('click', onClick);
+    else node.disabled = true;
+    return node;
+  }
+
+  function title(extraClass = '') {
+    return el('h1', { class: `title ${extraClass}` }, [
+      el('span', { class: 't1', text: 'フュー' }),
+      el('span', { class: 't2', text: 'チャー' }),
+      el('span', { class: 't3', text: '日' }),
+      el('span', { class: 't4', text: '記' }),
+    ]);
+  }
+
+  function showNotice(message) {
+    notice.textContent = message;
+    notice.hidden = false;
+  }
+
+  function hideNotice() {
+    notice.hidden = true;
+  }
+
+  // アプリ内の確認ダイアログ。onOk は「やめる」を押したときだけ呼ぶ
+  function confirmDialog(message, cancelText, okText, onOk) {
+    const close = () => {
+      backdrop.remove();
+      document.removeEventListener('keydown', onKey);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    const cancel = button(cancelText, 'primary', close);
+    const ok = button(okText, 'secondary', () => { close(); onOk(); });
+    const backdrop = el('div', { class: 'modal-backdrop' }, [
+      el('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true' }, [
+        el('p', { class: 'modal-text', text: message }),
+        el('div', { class: 'modal-buttons' }, [cancel, ok]),
+      ]),
+    ]);
+    backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
+    document.addEventListener('keydown', onKey);
+    document.body.append(backdrop);
+    cancel.focus();
+  }
+
+  // お題の4語を、品詞の色の下線付きで並べる
+  function odaiNode(words, extraClass = '') {
+    return el('p', { class: `odai ${extraClass}` },
+      POS.map((p) => el('span', { class: `odai-word pos-${p}`, text: words[p] })));
+  }
+
+  const odaiText = (words) => POS.map((p) => words[p]).join('');
+
+  function inventionSentence(inv) {
+    return el('p', { class: 'sentence' }, [
+      el('span', { class: 'year', text: `${inv.year}年` }),
+      `${state.userName} が「${odaiText(inv.words)}」を発明する`,
+    ]);
+  }
+
+  // 全角数字を半角にし、数字以外を取り除く
+  const toDigits = (s) => s.replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/\D/g, '');
+
+  // ---- 画面 ----
+  const screens = {
+    name: renderName,
+    home: renderHome,
+    game: renderGame,
+  };
+
+  function showScreen(name) {
+    app.replaceChildren(screens[name]());
+    window.scrollTo(0, 0);
+  }
+
+  function renderName() {
+    const input = el('input', {
+      type: 'text',
+      placeholder: 'あなたのなまえ',
+      autocomplete: 'off',
+      enterKeyHint: 'done',
+    });
+    const message = el('p', { class: 'field-message', 'aria-live': 'polite' });
+    const ok = button('OK', 'primary', submit);
+    ok.disabled = true;
+
+    const currentName = () => input.value.trim();
+    const length = () => Array.from(currentName()).length;
+    const isValid = () => length() >= 1 && length() <= NAME_MAX;
+
+    function update() {
+      message.textContent = length() > NAME_MAX ? '文字数が多すぎます' : '';
+      ok.disabled = !isValid();
+    }
+
+    function submit() {
+      if (!isValid()) return;
+      state.userName = currentName();
+      if (save()) showScreen('home');
+    }
+
+    input.addEventListener('input', update);
+    input.addEventListener('keydown', (e) => {
+      // 日本語変換中の Enter では決定しない
+      if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) submit();
+    });
+
+    return el('section', { class: 'screen' }, [
+      title('title-small'),
+      el('h2', { class: 'question', text: 'あなたのなまえは？' }),
+      input,
+      message,
+      ok,
+    ]);
+  }
+
+  function renderHome() {
+    // 「発明年表」は段階4でつなぐ
+    return el('section', { class: 'screen' }, [
+      el('div', { class: 'home-hero' }, [title()]),
+      el('div', { class: 'btn-group' }, [
+        button('はじめる', 'primary', () => showScreen('game')),
+        button('発明年表', 'secondary'),
+      ]),
+      el('p', { class: 'count', text: `これまでの発明：${state.inventions.length}` }),
+    ]);
+  }
+
+  function renderGame() {
+    const game = { step: 0, words: {}, description: '', busy: false };
+
+    const section = el('section', { class: 'screen' });
+    const view = (...nodes) => {
+      section.replaceChildren(...nodes);
+      window.scrollTo(0, 0);
+    };
+    const quitButton = () => button('ホームへ戻る', 'secondary', () => {
+      confirmDialog('やめるとこの発明は残りません', '続ける', 'やめる', () => showScreen('home'));
+    });
+
+    const message = el('p', { class: 'game-message', 'aria-live': 'polite' });
+    const slots = POS.map((p) => el('div', { class: `slot pos-${p}` }));
+    const stage = el('div', { class: 'stage' });
+    const footer = el('div', { class: 'btn-group' }, [quitButton()]);
+
+    function makeCard(pos, index) {
+      const card = el('button', { type: 'button', class: `card pos-${pos}`, 'aria-label': `カード${index + 1}` }, [
+        el('span', { class: 'card-inner' }, [
+          el('span', { class: 'card-face card-back', text: '?' }),
+          el('span', { class: 'card-face card-front' }),
+        ]),
+      ]);
+      card.style.animationDelay = `${index * 90}ms`;
+      return card;
+    }
+
+    function deal() {
+      const pos = POS[game.step];
+      const n = game.step + 1;
+      message.textContent = `${n}つ目の単語を選んで（${n}/${POS.length}）`;
+
+      // 語は選ばれたカードにだけ書く。選ばれなかったカードの語は画面に出さない
+      const words = drawCards(pos, Object.values(game.words));
+      const cards = words.map((_, i) => makeCard(pos, i));
+      cards.forEach((card, i) => card.addEventListener('click', () => pick(cards, card, words[i])));
+      stage.replaceChildren(el('div', { class: 'cards' }, cards));
+    }
+
+    function pick(cards, card, word) {
+      if (game.busy) return;
+      game.busy = true;
+      const pos = POS[game.step];
+
+      for (const c of cards) {
+        c.disabled = true;
+        if (c !== card) c.classList.add('is-dim');
+      }
+      const front = card.querySelector('.card-front');
+      front.textContent = word;
+      if (Array.from(word).length >= 5) front.classList.add('is-long');
+      card.classList.add('is-chosen');
+
+      game.words[pos] = word;
+      rememberWord(pos, word);
+
+      setTimeout(() => {
+        if (!stage.isConnected) return;
+        const slot = slots[game.step];
+        slot.textContent = word;
+        slot.classList.add('is-filled');
+        game.step += 1;
+        game.busy = false;
+        if (game.step < POS.length) deal();
+        else finish();
+      }, FLIP_MS + HOLD_MS);
+    }
+
+    function finish() {
+      message.textContent = 'お題ができた！';
+      stage.replaceChildren(odaiNode(game.words));
+      footer.prepend(button('つぎへ', 'primary', askDescription));
+    }
+
+    // どんな〇〇？
+    function askDescription() {
+      const noun = game.words.noun;
+      const input = el('textarea', { value: game.description });
+      const note = el('p', { class: 'field-message', 'aria-live': 'polite' });
+      const next = button('つぎへ', 'primary', submit);
+
+      const current = () => input.value.trim();
+      const length = () => Array.from(current()).length;
+      const isValid = () => length() >= 1 && length() <= DESCRIPTION_MAX;
+
+      function update() {
+        note.textContent = length() > DESCRIPTION_MAX ? '文字数が多すぎます' : '';
+        next.disabled = !isValid();
+      }
+
+      function submit() {
+        if (!isValid()) return;
+        game.description = current();
+        askYear();
+      }
+
+      input.addEventListener('input', update);
+      update();
+
+      view(
+        odaiNode(game.words, 'is-static'),
+        el('p', { class: 'ask', text: `って、どんな${noun}？` }),
+        input,
+        note,
+        el('div', { class: 'btn-group' }, [next, quitButton()]),
+      );
+    }
+
+    // 何年にできそう？
+    function askYear() {
+      const thisYear = new Date().getFullYear();
+      const input = el('input', {
+        type: 'text',
+        inputMode: 'numeric',
+        autocomplete: 'off',
+        value: String(thisYear),
+        'aria-label': '年',
+      });
+      const record = button('発明する！', 'primary', submit);
+      const steps = [-10, -1, 1, 10].map((d) => {
+        const b = el('button', { type: 'button', class: 'step-btn', text: d > 0 ? `+${d}` : `−${-d}` });
+        b.addEventListener('click', () => {
+          const base = readYear() ?? thisYear;
+          input.value = String(Math.min(YEAR_MAX, Math.max(YEAR_MIN, base + d)));
+          update();
+        });
+        return { b, d };
+      });
+
+      function readYear() {
+        if (!/^\d{1,4}$/.test(input.value)) return null;
+        const y = Number(input.value);
+        return y >= YEAR_MIN && y <= YEAR_MAX ? y : null;
+      }
+
+      function update() {
+        const y = readYear();
+        record.disabled = y === null;
+        for (const { b, d } of steps) {
+          b.disabled = y !== null && (d < 0 ? y <= YEAR_MIN : y >= YEAR_MAX);
+        }
+      }
+
+      function submit() {
+        const year = readYear();
+        if (year === null || game.busy) return;
+        game.busy = true;
+        const inv = {
+          no: state.inventions.reduce((max, v) => Math.max(max, v.no), 0) + 1,
+          words: { ...game.words },
+          description: game.description,
+          year,
+          createdAt: new Date().toISOString(),
+        };
+        state.inventions.push(inv);
+        if (!save()) {
+          // 保存できなかった発明は残さない
+          state.inventions.pop();
+          game.busy = false;
+          return;
+        }
+        showDone(inv);
+      }
+
+      input.addEventListener('input', () => {
+        const digits = toDigits(input.value).slice(0, 4);
+        if (digits !== input.value) input.value = digits;
+        update();
+      });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) submit();
+      });
+      update();
+
+      view(
+        odaiNode(game.words, 'is-static is-small'),
+        el('p', { class: 'ask', text: `その${game.words.noun}って、何年にできそう？` }),
+        el('div', { class: 'year-display' }, [input, el('span', { text: '年' })]),
+        el('div', { class: 'year-steps' }, steps.map((s) => s.b)),
+        el('div', { class: 'stage' }),
+        el('div', { class: 'btn-group' }, [record, quitButton()]),
+      );
+    }
+
+    // 発明できた！
+    function showDone(inv) {
+      view(
+        el('div', { class: 'done' }, [
+          el('p', { class: 'done-title' }, [el('strong', { text: `発明No.${inv.no}` }), ' ができた！']),
+          inventionSentence(inv),
+        ]),
+        el('div', { class: 'btn-group' }, [
+          // 「発明年表を見る」は段階4でつなぐ
+          button('発明年表を見る', 'primary'),
+          button('ホームへ', 'secondary', () => showScreen('home')),
+        ]),
+      );
+    }
+
+    deal();
+    view(
+      message,
+      el('div', { class: 'slots' }, slots),
+      stage,
+      footer,
+    );
+    return section;
+  }
+
+  // ---- 起動 ----
+  const state = load();
+  showScreen(state.userName ? 'home' : 'name');
+})();
+</script>
+</body>
+</html>
