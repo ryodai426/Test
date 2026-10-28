@@ -931,7 +931,7 @@
         button('はじめる', 'primary', () => showScreen('game')),
         button('発明年表', 'secondary', () => showScreen('timeline')),
       ]),
-      el('p', { class: 'count', text: `これまでの発明：${state.inventions.length}` }),
+      el('p', { class: 'count', text: `これからあなたがする発明の数：${state.inventions.length}` }),
     ]);
   }
 
