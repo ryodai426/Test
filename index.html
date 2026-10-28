@@ -172,7 +172,7 @@
   .btn-group { display: flex; flex-direction: column; gap: 16px; }
 
   /* なまえ */
-  .question { margin: 24px 0 0; font-size: 24px; font-weight: bold; color: var(--accent); text-align: center; }
+  .name-title { margin-bottom: 24px; }
   input[type="text"], textarea {
     width: 100%;
     font: inherit;
@@ -877,7 +877,8 @@
   function renderName() {
     const input = el('input', {
       type: 'text',
-      placeholder: 'あなたのなまえ',
+      placeholder: 'あなたの名前',
+      'aria-label': '名前',
       autocomplete: 'off',
       enterKeyHint: 'done',
     });
@@ -907,8 +908,7 @@
     });
 
     return el('section', { class: 'screen' }, [
-      title('title-small'),
-      el('h2', { class: 'question', text: 'あなたのなまえは？' }),
+      title('title-small name-title'),
       input,
       message,
       ok,
