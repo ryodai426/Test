@@ -483,6 +483,7 @@
   .cert-row dt { font-size: 13px; color: var(--sub); }
   .cert-row dd { margin: 2px 0 0; font-size: 17px; overflow-wrap: anywhere; }
   .cert-description { white-space: pre-wrap; }
+  .cert-empty { color: var(--sub); }
 
   /* 確認ダイアログ */
   .modal-backdrop {
@@ -493,13 +494,13 @@
   }
   .modal {
     width: 100%; max-width: 360px;
-    padding: 28px 20px 20px;
+    padding: 28px 16px 20px;
     background: radial-gradient(ellipse at 50% 35%, #FBF2DA 0%, #EAD5A6 100%);
     border: 6px solid var(--brass-mid);
     border-radius: 14px;
     box-shadow: 0 0 0 2px var(--brass-lo), 0 20px 60px rgba(0, 0, 0, 0.5);
   }
-  .modal-text { margin: 0 0 20px; font-size: 18px; font-weight: bold; text-align: center; }
+  .modal-text { margin: 0 0 20px; font-size: 17px; font-weight: bold; text-align: center; white-space: pre-line; }
   .modal-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .modal-buttons .btn { padding: 14px 8px; font-size: 17px; background-size: 0 0, 0 0, auto; }
 
@@ -809,7 +810,7 @@
     notice.hidden = true;
   }
 
-  // アプリ内の確認ダイアログ。onOk は「やめる」を押したときだけ呼ぶ
+  // アプリ内の確認ダイアログ。onOk は右のボタン（okText）を押したときだけ呼ぶ
   function confirmDialog(message, cancelText, okText, onOk) {
     const close = () => {
       backdrop.remove();
@@ -1021,17 +1022,25 @@
 
       const current = () => input.value.trim();
       const length = () => Array.from(current()).length;
-      const isValid = () => length() >= 1 && length() <= DESCRIPTION_MAX;
+      const tooLong = () => length() > DESCRIPTION_MAX;
 
       function update() {
-        note.textContent = length() > DESCRIPTION_MAX ? '文字数が多すぎます' : '';
-        next.disabled = !isValid();
+        note.textContent = tooLong() ? '文字数が多すぎます' : '';
+        next.disabled = tooLong();
       }
 
+      // アイデアは書かなくても進める。空のときだけ確認する
       function submit() {
-        if (!isValid()) return;
-        game.description = current();
-        askYear();
+        if (tooLong()) return;
+        const proceed = () => {
+          game.description = current();
+          askYear();
+        };
+        if (length() === 0) {
+          confirmDialog('まだアイデアを書き留めていませんが\nよろしいですか？', '書き留める', 'このまま進む', proceed);
+        } else {
+          proceed();
+        }
       }
 
       input.addEventListener('input', update);
@@ -1221,7 +1230,9 @@
         el('p', { class: 'cert-no', text: `発明No.${inv.no}` }),
         odaiNode(inv.words, 'is-static'),
         el('dl', { class: 'cert-list' }, [
-          row(`どんな${inv.words.noun}？`, el('span', { class: 'cert-description', text: inv.description })),
+          row(`どんな${inv.words.noun}？`, inv.description
+            ? el('span', { class: 'cert-description', text: inv.description })
+            : el('span', { class: 'cert-empty', text: '（書き留めていません）' })),
           row('生まれる年', `${inv.year}年`),
           row('発明した人', state.userName),
           row('記録した日', formatDateTime(inv.createdAt)),
