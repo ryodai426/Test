@@ -336,7 +336,7 @@
     border-color: var(--brass-hi);
     box-shadow: inset 0 3px 8px rgba(0, 0, 0, 0.8), 0 0 0 2px var(--brass-lo), 0 0 0 5px rgba(201, 154, 56, 0.35);
   }
-  .year-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .year-steps { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
   .step-btn {
     padding: 12px 0;
     font: inherit;
@@ -1052,7 +1052,7 @@
         'aria-label': '年',
       });
       const record = button('発明する！', 'primary', submit);
-      const steps = [-10, -1, 1, 10].map((d) => {
+      const steps = [-10, 10].map((d) => {
         const b = el('button', { type: 'button', class: 'step-btn', text: d > 0 ? `+${d}` : `−${-d}` });
         b.addEventListener('click', () => {
           const base = readYear() ?? startYear;
