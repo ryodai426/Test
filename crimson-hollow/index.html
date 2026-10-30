@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>CRIMSON HOLLOW — 赤霧の村</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&family=Noto+Serif+JP:wght@500;700;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --red:#b3121b; --red2:#ff2a2a; --gold:#d9b46a; --ink:#e9e2d4; --dim:#9a8f7c;
+  --panel:rgba(12,9,8,.82); --line:rgba(217,180,106,.35);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:#000;color:var(--ink);
+  font-family:"Noto Serif JP","Hiragino Mincho ProN","Yu Mincho",serif;user-select:none;-webkit-user-select:none;touch-action:none}
+canvas#game{position:fixed;inset:0;width:100%;height:100%;display:block}
+.hidden{display:none!important}
+.title-font{font-family:"Cinzel","Noto Serif JP",serif}
+
+/* ---------- HUD ---------- */
+#hud{position:fixed;inset:0;pointer-events:none}
+#vignette{position:fixed;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse at center,rgba(0,0,0,0) 55%,rgba(0,0,0,.65) 100%)}
+#dmg{position:fixed;inset:0;pointer-events:none;opacity:0;
+  background:radial-gradient(ellipse at center,rgba(120,0,0,0) 35%,rgba(160,0,0,.75) 100%)}
+#lowhp{position:fixed;inset:0;pointer-events:none;opacity:0;
+  background:radial-gradient(ellipse at center,rgba(90,0,0,0) 45%,rgba(110,0,0,.55) 100%)}
+#status{position:absolute;right:22px;bottom:20px;display:flex;align-items:flex-end;gap:16px}
+#weaponBox{text-align:right}
+#wname{font-size:13px;color:var(--gold);letter-spacing:.08em;text-shadow:0 1px 3px #000}
+#ammo{font-family:"Cinzel",serif;font-size:46px;line-height:1;font-weight:800;text-shadow:0 2px 6px #000}
+#ammo small{font-size:22px;color:var(--dim)}
+#reloadBar{height:3px;background:rgba(255,255,255,.12);margin-top:6px;width:150px;margin-left:auto;overflow:hidden}
+#reloadBar i{display:block;height:100%;width:0;background:var(--gold)}
+#lifeBox{width:190px;background:var(--panel);border:1px solid var(--line);padding:8px 10px 6px;border-radius:3px}
+#lifeTop{display:flex;justify-content:space-between;font-size:11px;letter-spacing:.2em;color:var(--dim)}
+#lifeState{font-family:"Cinzel",serif;font-weight:800;letter-spacing:.12em}
+#ecg{display:block;width:170px;height:40px;margin-top:3px}
+#lifeBar{height:5px;background:#2a1a16;margin-top:4px}
+#lifeBar i{display:block;height:100%;width:100%;background:#4ad15a;transition:width .2s}
+#topLeft{position:absolute;left:22px;top:18px;max-width:60vw}
+#chap{font-family:"Cinzel",serif;font-size:13px;color:var(--gold);letter-spacing:.25em}
+#obj{font-size:15px;margin-top:4px;text-shadow:0 1px 4px #000}
+#topRight{position:absolute;right:22px;top:18px;text-align:right;font-size:14px;text-shadow:0 1px 4px #000;line-height:1.6}
+#gold{font-family:"Cinzel",serif;color:var(--gold);font-size:18px}
+#items span{margin-left:12px;color:var(--ink)}
+#items b{color:var(--gold);font-weight:700}
+#log{position:absolute;left:22px;bottom:22px;font-size:14px;line-height:1.7;text-shadow:0 1px 3px #000}
+#log div{transition:opacity .6s}
+#prompt{position:absolute;left:50%;top:64%;transform:translateX(-50%);font-size:17px;
+  background:rgba(0,0,0,.55);border:1px solid var(--line);padding:6px 16px;border-radius:2px;white-space:nowrap;text-shadow:0 1px 3px #000}
+#prompt kbd,.kbd{display:inline-block;min-width:24px;padding:1px 6px;margin-right:6px;border:1px solid var(--gold);color:var(--gold);
+  border-radius:3px;font-family:"Cinzel",serif;font-size:14px;text-align:center}
+#qte{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);text-align:center}
+#qteKey{font-family:"Cinzel",serif;font-size:34px;font-weight:800;color:#fff;border:3px solid #fff;padding:6px 22px;border-radius:6px;
+  display:inline-block;background:rgba(160,0,0,.55);animation:pulse .25s infinite alternate}
+#qteText{margin-top:8px;font-size:18px;font-weight:700;text-shadow:0 0 8px #000}
+#qteBar{width:240px;height:8px;background:rgba(255,255,255,.2);margin:10px auto 0}
+#qteBar i{display:block;height:100%;width:0;background:#fff}
+@keyframes pulse{from{transform:scale(1)}to{transform:scale(1.08)}}
+#banner{position:absolute;left:0;right:0;top:34%;text-align:center;opacity:0;transition:opacity .8s}
+#bannerA{font-family:"Cinzel",serif;font-size:20px;letter-spacing:.6em;color:var(--gold)}
+#bannerB{font-size:52px;font-weight:900;letter-spacing:.2em;text-shadow:0 0 20px #000,0 0 40px #500}
+#bossBar{position:absolute;left:50%;top:18px;transform:translateX(-50%);width:min(520px,60vw);text-align:center}
+#bossName{font-size:14px;letter-spacing:.3em;color:#ff9a8a;text-shadow:0 1px 4px #000}
+#bossHp{height:8px;background:rgba(0,0,0,.6);border:1px solid #6a1a14;margin-top:4px}
+#bossHp i{display:block;height:100%;width:100%;background:linear-gradient(90deg,#7a0a0a,#e02a1a)}
+#scope{position:fixed;inset:0;pointer-events:none;
+  background:radial-gradient(circle at center,rgba(0,0,0,0) 0,rgba(0,0,0,0) 32vmin,#000 32.4vmin)}
+#scope:before,#scope:after{content:"";position:absolute;left:50%;top:50%;background:rgba(0,0,0,.85)}
+#scope:before{width:1px;height:64vmin;transform:translate(-50%,-50%)}
+#scope:after{height:1px;width:64vmin;transform:translate(-50%,-50%)}
+#scopeDot{position:fixed;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;background:#ff2020;box-shadow:0 0 6px #f00}
+#hint{position:absolute;left:50%;top:14px;transform:translateX(-50%);font-size:12px;color:var(--dim);text-shadow:0 1px 3px #000;transition:opacity 1.5s;white-space:nowrap}
+@media (max-width:1100px){#hint{display:none}}
+
+/* ---------- screens ---------- */
+.screen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;padding:16px}
+#title{background:radial-gradient(ellipse at 50% 40%,rgba(70,10,8,.55),rgba(0,0,0,.92) 70%),rgba(0,0,0,.5)}
+#title h1{margin:0;font-family:"Cinzel",serif;font-weight:800;font-size:clamp(40px,8vw,92px);letter-spacing:.08em;color:#e8d8c0;
+  text-shadow:0 0 30px rgba(180,10,10,.8),0 4px 0 #300}
+#title h1 span{color:var(--red2)}
+#title h2{margin:6px 0 0;font-size:clamp(16px,2.4vw,24px);letter-spacing:.8em;color:#c9a96a;font-weight:700}
+#story{max-width:620px;margin:26px auto 0;font-size:15px;line-height:2;color:#cdbfa8}
+.btn{pointer-events:auto;cursor:pointer;margin-top:26px;font-family:"Noto Serif JP",serif;font-size:18px;letter-spacing:.3em;color:var(--ink);
+  background:rgba(120,10,10,.35);border:1px solid var(--gold);padding:12px 38px;border-radius:2px;transition:.15s}
+.btn:hover{background:rgba(180,20,20,.6);color:#fff}
+.btn.small{font-size:14px;padding:8px 18px;letter-spacing:.1em;margin:0}
+.btn:disabled{opacity:.35;cursor:default;background:none}
+#controls{margin-top:22px;font-size:13px;color:var(--dim);line-height:1.9;display:grid;grid-template-columns:auto auto;gap:0 22px;text-align:left}
+#controls b{color:var(--gold);font-weight:500}
+#pause,#dead,#win{background:rgba(0,0,0,.72)}
+#dead h1{font-family:"Cinzel",serif;font-size:clamp(40px,8vw,84px);color:#c01010;letter-spacing:.12em;margin:0;text-shadow:0 0 30px #600}
+#win h1{font-family:"Cinzel",serif;font-size:clamp(34px,6vw,64px);color:var(--gold);letter-spacing:.14em;margin:0}
+#winStats{margin-top:18px;font-size:17px;line-height:2}
+#rank{font-family:"Cinzel",serif;font-size:80px;color:var(--red2);text-shadow:0 0 20px #600;line-height:1.1}
+
+/* ---------- case & shop ---------- */
+.panelScreen{background:rgba(0,0,0,.78)}
+.panelWrap{width:min(980px,100%);max-height:100%;overflow:auto;background:linear-gradient(#1b1411,#0e0a09);border:1px solid var(--line);
+  padding:18px 20px;text-align:left;box-shadow:0 0 60px #000}
+.panelHead{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid var(--line);padding-bottom:8px;margin-bottom:12px;gap:12px}
+.panelHead h3{margin:0;font-family:"Cinzel",serif;letter-spacing:.2em;color:var(--gold);font-size:22px}
+.goldBig{font-family:"Cinzel",serif;color:var(--gold);font-size:20px}
+#caseGrid{position:relative;background:#2b211b;border:6px solid #4a3426;border-radius:6px;
+  background-image:linear-gradient(rgba(0,0,0,.35) 1px,transparent 1px),linear-gradient(90deg,rgba(0,0,0,.35) 1px,transparent 1px);
+  box-shadow:inset 0 0 30px #000}
+.citem{position:absolute;border:1px solid rgba(255,255,255,.18);border-radius:3px;display:flex;flex-direction:column;justify-content:flex-end;
+  padding:3px 5px;font-size:11px;line-height:1.2;overflow:hidden;cursor:default;box-shadow:inset 0 0 12px rgba(0,0,0,.6)}
+.citem b{font-size:13px}
+.citem.use{cursor:pointer;outline:1px dashed rgba(255,255,255,.0)}
+.citem.use:hover{outline-color:var(--gold)}
+.citem .ico{position:absolute;left:6px;top:4px;font-size:20px;opacity:.85}
+.caseSide{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;align-items:flex-start}
+.caseInfo{flex:1;min-width:240px;font-size:13px;line-height:1.8;color:#cbbfa9}
+.caseBtns{display:flex;gap:8px;flex-wrap:wrap}
+#merchantLine{font-size:16px;color:#d9c79a;font-style:italic;margin:4px 0 10px}
+.tabs{display:flex;gap:6px;margin-bottom:10px}
+.tab{pointer-events:auto;cursor:pointer;padding:6px 16px;border:1px solid var(--line);font-size:14px;color:var(--dim);background:none;font-family:inherit}
+.tab.on{color:#fff;border-color:var(--gold);background:rgba(120,20,10,.35)}
+.shopList{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:8px}
+.sitem{border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);padding:10px 12px;display:flex;flex-direction:column;gap:4px}
+.sitem .nm{font-size:15px;font-weight:700}
+.sitem .ds{font-size:12px;color:var(--dim);line-height:1.6;flex:1}
+.sitem .row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.sitem .pr{font-family:"Cinzel",serif;color:var(--gold)}
+.lvdots{letter-spacing:2px;color:var(--gold)}
+
+/* ---------- touch ---------- */
+#touch{position:fixed;inset:0;pointer-events:none}
+#stick{position:absolute;left:28px;bottom:28px;width:130px;height:130px;border-radius:50%;border:2px solid rgba(255,255,255,.25);background:rgba(0,0,0,.2);pointer-events:auto}
+#stickKnob{position:absolute;left:50%;top:50%;width:54px;height:54px;margin:-27px 0 0 -27px;border-radius:50%;background:rgba(255,255,255,.25)}
+.tbtn{position:absolute;pointer-events:auto;width:62px;height:62px;border-radius:50%;border:2px solid rgba(255,255,255,.35);
+  background:rgba(0,0,0,.35);color:#fff;font-size:13px;display:flex;align-items:center;justify-content:center;font-family:inherit}
+.tbtn.on{background:rgba(180,20,20,.6)}
+#lookZone{position:absolute;right:0;top:0;width:60%;height:100%;pointer-events:auto}
+@media (max-width:700px){
+  #status{right:10px;bottom:10px;transform:scale(.8);transform-origin:right bottom}
+  #topLeft{left:12px;top:10px}#topRight{right:12px;top:10px;font-size:12px}
+  #log{left:12px;bottom:auto;top:76px;font-size:12px}
+  #bannerB{font-size:34px}
+}
+body.touch #status{bottom:auto;top:62px;right:10px;transform:scale(.72);transform-origin:right top}
+body.touch #log{bottom:auto;top:90px}
+body.touch #hint{display:none}
+</style>
+<script type="importmap">{"imports":{"three":"./three.module.min.js"}}</script>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud" class="hidden">
+  <div id="vignette"></div>
+  <div id="lowhp"></div>
+  <div id="dmg"></div>
+  <div id="scope" class="hidden"><div id="scopeDot"></div></div>
+  <div id="topLeft"><div id="chap"></div><div id="obj"></div></div>
+  <div id="topRight"><div id="gold">0 G</div><div id="items"></div></div>
+  <div id="bossBar" class="hidden"><div id="bossName">処刑人 ― THE EXECUTIONER</div><div id="bossHp"><i></i></div></div>
+  <div id="banner"><div id="bannerA"></div><div id="bannerB"></div></div>
+  <div id="prompt" class="hidden"></div>
+  <div id="qte" class="hidden"><div id="qteKey">SPACE</div><div id="qteText"></div><div id="qteBar"><i></i></div></div>
+  <div id="log"></div>
+  <div id="status">
+    <div id="weaponBox">
+      <div id="wname"></div>
+      <div id="ammo">10 <small>/ 30</small></div>
+      <div id="reloadBar"><i></i></div>
+    </div>
+    <div id="lifeBox">
+      <div id="lifeTop"><span>LIFE</span><span id="lifeState">FINE</span></div>
+      <canvas id="ecg" width="340" height="80"></canvas>
+      <div id="lifeBar"><i></i></div>
+    </div>
+  </div>
+  <div id="hint">右クリック:構え　左クリック:撃つ/ナイフ　R:リロード　F:蹴り　H:回復　G:手榴弾　Q:クイックターン　Tab:アタッシュケース</div>
+</div>
+
+<div id="touch" class="hidden">
+  <div id="lookZone"></div>
+  <div id="stick"><div id="stickKnob"></div></div>
+  <button class="tbtn" id="tAim" style="right:96px;bottom:110px">構え</button>
+  <button class="tbtn" id="tFire" style="right:22px;bottom:150px;width:72px;height:72px">撃つ</button>
+  <button class="tbtn" id="tAct" style="right:22px;bottom:60px">蹴り<br>/E</button>
+  <button class="tbtn" id="tReload" style="right:100px;bottom:30px">R</button>
+  <button class="tbtn" id="tKnife" style="right:178px;bottom:30px">ナイフ</button>
+  <button class="tbtn" id="tHeal" style="right:22px;bottom:240px;width:52px;height:52px">回復</button>
+  <button class="tbtn" id="tWeap" style="right:84px;bottom:240px;width:52px;height:52px">武器</button>
+  <button class="tbtn" id="tGren" style="right:146px;bottom:240px;width:52px;height:52px">手榴</button>
+  <button class="tbtn" id="tTurn" style="right:178px;bottom:110px;width:52px;height:52px">180°</button>
+  <button class="tbtn" id="tCase" style="left:22px;top:110px;width:52px;height:52px">ケース</button>
+  <button class="tbtn hidden" id="tNext" style="left:50%;top:22%;width:auto;height:auto;padding:10px 18px;border-radius:4px;transform:translateX(-50%)">次の章へ</button>
+</div>
+
+<div id="title" class="screen">
+  <h1 class="title-font">CRIMSON <span>HOLLOW</span></h1>
+  <h2>赤 霧 の 村</h2>
+  <div id="story">
+    消息を絶った国際調査団を追い、特殊捜査官 <b>レイ・カーヴァー</b> は<br>
+    霧に閉ざされた山あいの村へ足を踏み入れた。<br>
+    出迎えた村人たちの瞳は、赤く濁っていた――。
+  </div>
+  <button class="btn" id="startBtn">ゲームを始める</button>
+  <div id="controls">
+    <span><b>WASD</b> 移動 / <b>Shift</b> 走る</span><span><b>マウス</b> 視点</span>
+    <span><b>右クリック</b> 構える（構え中は移動不可）</span><span><b>左クリック</b> 撃つ / 構えなしでナイフ</span>
+    <span><b>F</b> 怯んだ敵に回し蹴り</span><span><b>R</b> リロード / <b>1・2・3</b> 武器</span>
+    <span><b>H</b> ハーブで回復 / <b>G</b> 手榴弾</span><span><b>Q</b> クイックターン</span>
+    <span><b>E</b> 商人と取引 / <b>Tab</b> ケース</span><span><b>SPACE</b> 連打・回避（QTE）</span>
+  </div>
+</div>
+
+<div id="pause" class="screen hidden">
+  <h1 class="title-font" style="margin:0;letter-spacing:.3em;color:var(--gold)">PAUSE</h1>
+  <button class="btn" id="resumeBtn">再開する</button>
+  <div style="margin-top:14px;font-size:13px;color:var(--dim)">マウス感度</div>
+  <input id="sens" type="range" min="0.4" max="2.4" step="0.1" value="1" style="width:220px;pointer-events:auto">
+</div>
+
+<div id="dead" class="screen hidden">
+  <h1>YOU ARE DEAD</h1>
+  <div style="margin-top:10px;color:#c9a9a0">任務失敗 ― 村の霧に呑まれた</div>
+  <button class="btn" id="contBtn">コンティニュー（章の始めから）</button>
+</div>
+
+<div id="win" class="screen hidden">
+  <h1>MISSION COMPLETE</h1>
+  <div id="winStats"></div>
+  <button class="btn" id="againBtn">もう一度プレイ</button>
+</div>
+
+<div id="case" class="screen panelScreen hidden">
+  <div class="panelWrap">
+    <div class="panelHead"><h3>ATTACHÉ CASE</h3><span class="goldBig" id="caseGold"></span></div>
+    <div id="caseGrid"></div>
+    <div class="caseSide">
+      <div class="caseInfo" id="caseInfo"></div>
+      <div class="caseBtns">
+        <button class="btn small" id="mixBtn">ハーブを調合（緑＋赤）</button>
+        <button class="btn small" id="useBtn">ハーブを使う</button>
+        <button class="btn small" id="caseClose">閉じる（Tab）</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="shop" class="screen panelScreen hidden">
+  <div class="panelWrap">
+    <div class="panelHead"><h3>旅の商人</h3><span class="goldBig" id="shopGold"></span></div>
+    <div id="merchantLine"></div>
+    <div class="tabs">
+      <button class="tab on" data-tab="buy">購入</button>
+      <button class="tab" data-tab="tune">改造</button>
+      <button class="tab" data-tab="sell">売却</button>
+    </div>
+    <div class="shopList" id="shopList"></div>
+    <div style="margin-top:14px;text-align:right"><button class="btn small" id="shopClose">店を出る（E）</button></div>
+  </div>
+</div>
+
+<script type="module" src="./game.js"></script>
+</body>
+</html>
