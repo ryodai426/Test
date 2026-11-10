@@ -383,6 +383,35 @@
   .range { margin: -8px 0 0; text-align: center; color: var(--sub); font-size: 15px; }
   .empty { flex: 1; display: flex; flex-direction: column; justify-content: center; text-align: center; font-size: 17px; }
   .empty p { margin: 0; }
+
+  /* 名詞を選ぶ */
+  .noun-group { display: flex; flex-direction: column; gap: 8px; }
+  .noun-group-title {
+    margin: 8px 0 0;
+    font-size: 15px;
+    color: var(--sub);
+    border-bottom: 1px solid rgba(107, 74, 22, 0.3);
+    padding-bottom: 4px;
+  }
+  .chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+  .chip {
+    min-height: 44px;
+    padding: 6px 4px;
+    font: inherit;
+    font-size: 14px;
+    font-weight: bold;
+    letter-spacing: 0;
+    line-height: 1.3;
+    line-break: strict;
+    color: var(--ink);
+    background: var(--tint);
+    border: 2px solid var(--c);
+    border-radius: 8px;
+    box-shadow: 0 2px 0 var(--c);
+    cursor: pointer;
+  }
+  .chip.is-wide { grid-column: span 2; }
+  .chip:active { transform: translateY(2px); box-shadow: none; }
   .timeline {
     flex: 1;
     position: relative;
@@ -563,6 +592,18 @@
     ['励ます', '励ました'], ['泳ぐ', '泳いだ'], ['飛ぶ', '飛んだ'], ['化ける', '化けた'], ['甘える', '甘えた'],
   ];
 
+  // 名詞は「モノ」と「サービス・コト」。カードでは混ぜて使い、名詞を選ぶ画面では分けて並べる
+  const NOUN_THINGS = [
+    '自転車', '日記', '時計', '消しゴム', 'マンション', 'バッグ', 'ふせん', 'CD', 'カメラ', '机',
+    '照明', 'キッチン', 'スニーカー', 'コップ', '椅子', 'ペン', '傘', '枕', '冷蔵庫', '鏡',
+    '靴下', '歯ブラシ', 'メガネ', '帽子', 'エレベーター', 'ベンチ', '信号機', '自販機', '手袋', 'マフラー',
+    'ハンガー', 'カーテン', 'ドア', '植木鉢', '郵便ポスト', 'リモコン', 'イヤホン', '財布', '鍵', 'ほうき',
+    '電車', 'ハサミ', '絆創膏', '本棚', 'ふとん', '扇風機', 'トースター', '地図', 'ソファ', 'コーヒーテーブル',
+  ];
+  const NOUN_SERVICES = [
+    '宅配便', '天気予報', '保険', '銀行', 'ホテル', '図書館', 'ジム', 'SNS', 'カフェ', 'レストラン',
+  ];
+
   const WORDS = {
     adverb: [
       'おそるおそる', '思い切って', 'まったり', 'いつも', 'いきなり', 'きちんと', 'もれなく', 'さらに', 'なぜか', 'こっそり',
@@ -579,15 +620,7 @@
       '正直な', '律儀な', '器用な', 'ドジな', '生意気な', '甘えん坊な', 'マイペースな', '勇敢な', '慎重な', 'おおらかな',
       'ロマンチックな', '凛とした', 'ひょうきんな', '繊細な', '物静かな', '好奇心旺盛な', '涙もろい', '欲張りな', '世話好きな', 'ずぼらな',
     ],
-    noun: [
-      '自転車', '日記', '時計', '消しゴム', 'マンション', 'バッグ', 'ふせん', 'CD', 'カメラ', '机',
-      '照明', 'キッチン', 'スニーカー', 'コップ', '椅子', 'ペン', '傘', '枕', '冷蔵庫', '鏡',
-      '靴下', '歯ブラシ', 'メガネ', '帽子', 'エレベーター', 'ベンチ', '信号機', '自販機', '手袋', 'マフラー',
-      'ハンガー', 'カーテン', 'ドア', '植木鉢', '郵便ポスト', 'リモコン', 'イヤホン', '財布', '鍵', 'ほうき',
-      '電車', 'ハサミ', '絆創膏', '本棚', 'ふとん', '扇風機', 'トースター', '地図',
-      // サービス・コト
-      '宅配便', '天気予報', '保険', '銀行', 'ホテル', '図書館', 'ジム', 'SNS', 'カフェ', 'レストラン',
-    ],
+    noun: [...NOUN_THINGS, ...NOUN_SERVICES],
   };
 
   // 過去の形は、いまの形と同じ語として扱う（相性・直近の判定、同じ場に2枚並べない）
@@ -634,6 +667,7 @@
   const FLIP_MS = 600;
   const HOLD_MS = 200;
   const DESCRIPTION_MAX = 200;
+  const NOUN_MAX = 15;
   const YEAR_MIN = 1;
   const YEAR_MAX = 9999;
 
@@ -870,6 +904,7 @@
   const screens = {
     name: renderName,
     home: renderHome,
+    choose: renderChooseNoun,
     game: renderGame,
     timeline: renderTimeline,
     detail: renderDetail,
@@ -932,14 +967,73 @@
       ]),
       el('div', { class: 'btn-group' }, [
         button('はじめる', 'primary', () => showScreen('game')),
+        button('名詞を選んではじめる', 'secondary', () => showScreen('choose')),
         button('発明年表', 'secondary', () => showScreen('timeline')),
       ]),
       el('p', { class: 'count', text: `これからあなたがする発明の数：${state.inventions.length}` }),
     ]);
   }
 
-  function renderGame() {
-    const game = { step: 0, words: {}, description: '', busy: false };
+  // 名詞を選ぶ：考えたいモノ・サービスを先に決めて、残りの3語だけカードで引く（企業やテーマに合わせたアイデア出し用）
+  function renderChooseNoun() {
+    const start = (noun) => showScreen('game', { noun });
+
+    const input = el('input', {
+      type: 'text',
+      placeholder: '自分で入力（例：クッション）',
+      autocomplete: 'off',
+      enterKeyHint: 'done',
+      'aria-label': '名詞',
+    });
+    const note = el('p', { class: 'field-message', 'aria-live': 'polite' });
+    const ok = button('この名詞ではじめる', 'primary', submit);
+
+    const current = () => input.value.trim();
+    const length = () => Array.from(current()).length;
+    const isValid = () => length() >= 1 && length() <= NOUN_MAX;
+
+    function update() {
+      note.textContent = length() > NOUN_MAX ? '文字数が多すぎます' : '';
+      ok.disabled = !isValid();
+    }
+
+    function submit() {
+      if (isValid()) start(current());
+    }
+
+    input.addEventListener('input', update);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) submit();
+    });
+    update();
+
+    const group = (label, words) => el('div', { class: 'noun-group' }, [
+      el('h3', { class: 'noun-group-title', text: label }),
+      el('div', { class: 'chips' }, words.map((w) => {
+        const chip = el('button', { type: 'button', class: 'chip pos-noun', text: w });
+        if (Array.from(w).length > 6) chip.classList.add('is-wide');
+        chip.addEventListener('click', () => start(w));
+        return chip;
+      })),
+    ]);
+
+    return el('section', { class: 'screen' }, [
+      el('h2', { class: 'page-title', text: '名詞を選ぶ' }),
+      el('p', { class: 'range', text: '発明したいモノやサービスを選んでください' }),
+      input,
+      note,
+      ok,
+      group('モノ', NOUN_THINGS),
+      group('サービス', NOUN_SERVICES),
+      el('div', { class: 'btn-group' }, [button('ホームへ', 'secondary', () => showScreen('home'))]),
+    ]);
+  }
+
+  // arg.noun があれば、名詞は決まった状態で始める
+  function renderGame(arg) {
+    const fixedNoun = arg?.noun;
+    const game = { step: 0, words: fixedNoun ? { noun: fixedNoun } : {}, description: '', busy: false };
+    const steps = fixedNoun ? POS.filter((p) => p !== 'noun') : POS;
 
     const section = el('section', { class: 'screen' });
     const view = (...nodes) => {
@@ -951,7 +1045,7 @@
     });
 
     const message = el('p', { class: 'game-message', 'aria-live': 'polite' });
-    const slots = POS.map((p) => el('div', { class: `slot pos-${p}` }));
+    const slots = POS.map((p) => el('div', { class: `slot pos-${p}${game.words[p] ? ' is-filled' : ''}`, text: game.words[p] ?? '' }));
     const stage = el('div', { class: 'stage' });
     const footer = el('div', { class: 'btn-group' }, [quitButton()]);
 
@@ -967,9 +1061,9 @@
     }
 
     function deal() {
-      const pos = POS[game.step];
+      const pos = steps[game.step];
       const n = game.step + 1;
-      message.textContent = `${n}つ目の単語を選んで（${n}/${POS.length}）`;
+      message.textContent = `${n}つ目の単語を選んで（${n}/${steps.length}）`;
 
       // 語は選ばれたカードにだけ書く。選ばれなかったカードの語は画面に出さない
       const words = drawCards(pos, Object.values(game.words));
@@ -981,7 +1075,7 @@
     function pick(cards, card, word) {
       if (game.busy) return;
       game.busy = true;
-      const pos = POS[game.step];
+      const pos = steps[game.step];
 
       for (const c of cards) {
         c.disabled = true;
@@ -997,12 +1091,12 @@
 
       setTimeout(() => {
         if (!stage.isConnected) return;
-        const slot = slots[game.step];
+        const slot = slots[POS.indexOf(pos)];
         slot.textContent = word;
         slot.classList.add('is-filled');
         game.step += 1;
         game.busy = false;
-        if (game.step < POS.length) deal();
+        if (game.step < steps.length) deal();
         else finish();
       }, FLIP_MS + HOLD_MS);
     }
