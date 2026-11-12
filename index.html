@@ -433,6 +433,25 @@
   }
   .entry-button .sentence { display: block; font-size: 16px; line-height: 1.7; }
   .entry-no { display: block; font-size: 13px; color: var(--sub); }
+  .entry-button { padding-right: 60px; }
+  .entry-delete {
+    position: absolute;
+    top: 8px; right: 8px;
+    padding: 4px 10px;
+    font: inherit;
+    font-size: 13px;
+    color: var(--sub);
+    background: rgba(255, 250, 235, 0.9);
+    border: 1px solid #A58350;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .entry-delete:active { transform: translateY(1px); }
+  .timeline-notice { margin: 0; min-height: 0; text-align: center; font-size: 15px; font-weight: bold; color: var(--accent); }
+  .timeline-notice:empty { display: none; }
+  .data-note { margin: 4px 0 0; text-align: center; font-size: 13px; color: var(--sub); }
+  .data-buttons { display: flex; justify-content: center; gap: 12px; }
+  .data-buttons .btn { width: auto; flex: 1; max-width: 160px; padding: 10px 28px; font-size: 16px; }
   .entry.is-past .entry-button { background: rgba(230, 214, 180, 0.6); }
   .entry.is-past::before { filter: grayscale(0.6) drop-shadow(0 1px 1px rgba(60, 35, 10, 0.5)); }
   /* 「いま」の線：銅色の目盛り */
@@ -731,6 +750,80 @@
       showNotice('保存できませんでした');
       return false;
     }
+  }
+
+  // ---- 書き出し・読み込み・削除 ----
+  const EXPORT_APP = 'hatsumei-nikki';
+
+  // 発明をファイルに書き出す。読み込めば、ほかの端末の発明日記でも見られる
+  function exportInventions() {
+    const data = {
+      app: EXPORT_APP,
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      inventions: state.inventions,
+    };
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const name = `hatsumei-nikki-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}.json`;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+    const link = el('a', { href: url, download: name });
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  const inventionKey = (inv) => `${inv.createdAt}|${odaiText(inv.words)}`;
+
+  // 書き出したファイルの発明を、この端末の発明に足す。同じ発明（記録日時とお題が同じ）は足さない
+  // 足した発明には、この端末の続きの発明No.を付ける。結果を一文で返す
+  function importInventions(text) {
+    let raw;
+    try {
+      raw = JSON.parse(text);
+    } catch (e) {
+      return '読み込めないファイルです';
+    }
+    if (raw === null || typeof raw !== 'object' || !Array.isArray(raw.inventions)) {
+      return '読み込めないファイルです';
+    }
+    const known = new Set(state.inventions.map(inventionKey));
+    const incoming = raw.inventions
+      .filter(isValidInvention)
+      .filter((inv) => {
+        const key = inventionKey(inv);
+        if (known.has(key)) return false;
+        known.add(key);
+        return true;
+      })
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.no - b.no);
+    if (incoming.length === 0) {
+      return raw.inventions.length === 0 ? '発明が入っていないファイルです' : '新しい発明はありませんでした（すべて読み込み済みです）';
+    }
+
+    let no = state.inventions.reduce((max, v) => Math.max(max, v.no), 0);
+    const added = incoming.map((inv) => ({
+      no: ++no,
+      words: POS.reduce((w, p) => ({ ...w, [p]: inv.words[p] }), {}),
+      description: inv.description,
+      year: inv.year,
+      createdAt: inv.createdAt,
+    }));
+    const before = state.inventions;
+    state.inventions = before.concat(added);
+    if (!save()) {
+      state.inventions = before;
+      return '保存できませんでした';
+    }
+    const skipped = raw.inventions.length - added.length;
+    return `${added.length}件の発明を読み込みました${skipped > 0 ? `（${skipped}件は読み込み済みなどのため、足していません）` : ''}`;
+  }
+
+  function deleteInvention(no) {
+    const before = state.inventions;
+    state.inventions = before.filter((v) => v.no !== no);
+    if (!save()) state.inventions = before;
   }
 
   // ---- 語の出し方 ----
@@ -1185,13 +1278,37 @@
   }
 
   // 発明年表：下が古く、上へいくほど未来。同じ年は記録した順に下から積む。「いま」の線を入れる
+  // arg.returnY：戻ったときのスクロール位置。arg.notice：読み込み・削除の結果
   function renderTimeline(arg) {
     const header = el('h2', { class: 'page-title', text: '発明年表' });
     const homeButton = button('ホームへ', 'secondary', () => showScreen('home'));
+    const notice = el('p', { class: 'timeline-notice', 'aria-live': 'polite', text: arg?.notice ?? '' });
+
+    // 読み込み：ファイルを選ぶ欄は隠しておき、ボタンから開く
+    const fileInput = el('input', { type: 'file', accept: '.json,application/json', hidden: true });
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+      let text;
+      try {
+        text = await file.text();
+      } catch (e) {
+        notice.textContent = '読み込めないファイルです';
+        return;
+      }
+      showScreen('timeline', { notice: importInventions(text) });
+    });
+    const importButton = button('読み込む', 'secondary', () => fileInput.click());
+    const dataButtons = (withExport) => el('div', { class: 'data-buttons' }, [
+      withExport ? button('書き出す', 'secondary', exportInventions) : null,
+      importButton,
+      fileInput,
+    ].filter(Boolean));
 
     if (state.inventions.length === 0) {
       return el('section', { class: 'screen' }, [
         header,
+        notice,
         el('div', { class: 'empty' }, [
           el('p', { text: 'まだ発明がありません。' }),
           el('p', { text: '「はじめる」から作ってみよう。' }),
@@ -1200,6 +1317,8 @@
           button('はじめる', 'primary', () => showScreen('game')),
           homeButton,
         ]),
+        el('p', { class: 'data-note', text: 'ほかの端末で書き出したファイルを読み込めます' }),
+        dataButtons(false),
       ]);
     }
 
@@ -1222,26 +1341,37 @@
         inventionSentence(inv, 'span'),
       ]);
       open.addEventListener('click', () => showScreen('detail', { no: inv.no, returnY: window.scrollY }));
-      items.push(el('li', { class: `entry${inv.year < now ? ' is-past' : ''}` }, [open]));
+      const remove = el('button', { type: 'button', class: 'entry-delete', text: '消す', 'aria-label': `発明No.${inv.no}を消す` });
+      remove.addEventListener('click', () => {
+        confirmDialog(`発明No.${inv.no}を消しますか？\n消すと元に戻せません`, '残す', '消す', () => {
+          const returnY = window.scrollY;
+          deleteInvention(inv.no);
+          showScreen('timeline', { returnY, notice: `発明No.${inv.no}を消しました` });
+        });
+      });
+      items.push(el('li', { class: `entry${inv.year < now ? ' is-past' : ''}` }, [open, remove]));
     }
     if (!nowPlaced) items.push(nowLine);
 
     // 開いたときは「いま」の線を画面に入れる。詳細から戻ったときは元の位置へ
     requestAnimationFrame(() => {
       if (!nowLine.isConnected) return;
-      if (arg) window.scrollTo(0, arg.returnY);
+      if (arg?.returnY !== undefined) window.scrollTo(0, arg.returnY);
       else nowLine.scrollIntoView({ block: 'center' });
     });
 
     return el('section', { class: 'screen' }, [
       header,
       el('p', { class: 'range', text: `${range}　発明 ${list.length}件` }),
+      notice,
       el('ol', { class: 'timeline' }, items),
       el('div', { class: 'btn-group' }, [homeButton]),
+      el('p', { class: 'data-note', text: 'ファイルに書き出して、ほかの端末で読み込めます' }),
+      dataButtons(true),
     ]);
   }
 
-  // 発明のくわしい内容（見るだけ。編集・削除はしない）
+  // 発明のくわしい内容（見るだけ。削除は年表から）
   function renderDetail({ no, returnY }) {
     const inv = state.inventions.find((v) => v.no === no);
     if (!inv) return renderTimeline();
