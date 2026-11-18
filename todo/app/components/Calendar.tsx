@@ -27,12 +27,28 @@ function useNowMin() {
   return m;
 }
 
+type Span = { o: Occ; s: number; e: number; lane: number; lanes: number };
+
+/** 予定の開始・終了（分） */
+function spanOf(o: Occ) {
+  const s = toMin(o.task.time!);
+  return { s, e: Math.min(24 * 60, s + Math.max(20, o.task.duration_min)) };
+}
+
 /** 重なった予定を横に並べる */
 function layout(list: Occ[]) {
-  const timed = list.filter(o => o.task.time).map(o => {
-    const s = toMin(o.task.time!);
-    return { o, s, e: Math.min(24 * 60, s + Math.max(20, o.task.duration_min)), lane: 0, lanes: 1 };
-  }).sort((a, b) => a.s - b.s || b.e - a.e);
+  return laneLayout(list.filter(o => o.task.time).map(o => ({ o, ...spanOf(o), lane: 0, lanes: 1 })));
+}
+
+/** from〜to（分）の時間帯に入る部分だけを切り出して並べる（午前・午後の列用） */
+function layoutRange(list: Occ[], from: number, to: number) {
+  return laneLayout(list.filter(o => o.task.time).map(o => ({ o, ...spanOf(o), lane: 0, lanes: 1 }))
+    .map(x => ({ ...x, s: Math.max(x.s, from), e: Math.min(x.e, to) }))
+    .filter(x => x.e > x.s));
+}
+
+function laneLayout(spans: Span[]) {
+  const timed = spans.sort((a, b) => a.s - b.s || b.e - a.e);
   let cluster: typeof timed = [];
   let clusterEnd = -1;
   const flush = () => {
@@ -83,6 +99,7 @@ function TimedColumn({ day, list, isToday, nowMin, onOpen, onNew, compact }: {
 function useScrollToMorning(dep: string) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    if (dep === 'split') return;
     const el = ref.current?.closest('.content') as HTMLElement | null;
     if (!el) return;
     const d = new Date();
@@ -92,28 +109,100 @@ function useScrollToMorning(dep: string) {
   return ref;
 }
 
+/** PC くらいの横幅か */
+function useIsWide() {
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 900px)');
+    const on = () => setWide(mq.matches);
+    on();
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return wide;
+}
+
+/** 時刻のない予定（終日） */
+function AllDayRow({ list, p, sticky = true }: { list: Occ[]; p: Props; sticky?: boolean }) {
+  const untimed = list.filter(o => !o.task.time);
+  if (!untimed.length) return null;
+  return (
+    <div className="allday" style={{ gridTemplateColumns: '52px 1fr', position: sticky ? undefined : 'static' }}>
+      <div className="axis-label">終日</div>
+      <div className="allday-cell allday-wrap">
+        {untimed.map(o => (
+          <div key={o.task.id} className="row">
+            <button className={'check' + (o.done ? ' on' : '')} onClick={() => p.onToggle(o)} aria-label="完了">{o.done && <Icon name="check" size={13} stroke={2.8} />}</button>
+            <button className={'pill' + (o.done ? ' done' : '')} style={{ background: o.color + '4d' }} onClick={() => p.onOpen(o)}>
+              <span className="dot" style={{ background: o.color }} />{!o.task.kind_id && <Emoji char={KIND_PRESETS[o.task.kind]?.icon} size={14} />} {o.task.title}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const HALF_HOURS = Array.from({ length: 12 }, (_, i) => i);
+
+/** 午前（0〜12時）・午後（12〜24時）の片方の列。画面の高さに合わせて1時間の高さが決まる */
+function HalfDay({ base, list, p, nowMin }: { base: number; list: Occ[]; p: Props; nowMin: number }) {
+  const end = base + 720;
+  const pct = (m: number) => ((m - base) / 720) * 100;
+  const isToday = p.cursor === p.today;
+  return (
+    <section className="half" aria-label={base ? '午後' : '午前'}>
+      <div className="half-head">{base ? '午後' : '午前'}<span>{base ? '12:00 – 24:00' : '0:00 – 12:00'}</span></div>
+      <div className="half-grid">
+        <div className="half-times">
+          {HALF_HOURS.map(h => <div key={h}>{`${base / 60 + h}:00`}</div>)}
+        </div>
+        <div className="half-col">
+          {HALF_HOURS.map(h => (
+            <div key={h} className="slot" onClick={() => p.onNew(p.cursor, fromMin(base + h * 60))} title={`${base / 60 + h}:00 に予定を追加`} />
+          ))}
+          {layoutRange(list, base, end).map(({ o, s, e, lane, lanes }) => (
+            <button key={o.task.id + o.day} className={'ev ev-half' + (o.done ? ' done' : '')}
+              style={{
+                top: `calc(${pct(s)}% + 1px)`, height: `calc(${pct(e) - pct(s)}% - 2px)`,
+                left: `calc(${(lane / lanes) * 100}% + 3px)`, width: `calc(${100 / lanes}% - 6px)`, right: 'auto',
+                background: o.color + '4d',
+              }}
+              onClick={ev => { ev.stopPropagation(); p.onOpen(o); }}>
+              <div className="t">
+                <span className="s">{s > spanOf(o).s ? '（続き）' : o.task.time}</span>{' '}
+                {!o.task.kind_id && <><Emoji char={KIND_PRESETS[o.task.kind]?.icon} size={14} />{' '}</>}{o.task.title}
+                {o.group && !o.group.is_personal && <span className="s">{' '}・{o.group.name}</span>}
+              </div>
+            </button>
+          ))}
+          {isToday && nowMin >= base && nowMin < end && <div className="nowline" style={{ top: `${pct(nowMin)}%` }} />}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function DayView(p: Props) {
   const nowMin = useNowMin();
+  const wide = useIsWide();
   const list = occurrences(p.state, p.cursor, p.groupFilter);
-  const untimed = list.filter(o => !o.task.time);
-  const ref = useScrollToMorning(p.cursor);
+  const ref = useScrollToMorning(wide ? 'split' : p.cursor);
+  if (wide) {
+    // PC：1日を午前と午後の2列に分け、スクロールせずに見渡せるようにする
+    return (
+      <div className="daysplit">
+        <AllDayRow list={list} p={p} sticky={false} />
+        <div className="daysplit-body">
+          <HalfDay base={0} list={list} p={p} nowMin={nowMin} />
+          <HalfDay base={720} list={list} p={p} nowMin={nowMin} />
+        </div>
+      </div>
+    );
+  }
   return (
     <div ref={ref}>
-      {untimed.length > 0 && (
-        <div className="allday" style={{ gridTemplateColumns: '52px 1fr' }}>
-          <div className="axis-label">終日</div>
-          <div className="allday-cell">
-            {untimed.map(o => (
-              <div key={o.task.id} className="row">
-                <button className={'check' + (o.done ? ' on' : '')} onClick={() => p.onToggle(o)} aria-label="完了">{o.done && <Icon name="check" size={13} stroke={2.8} />}</button>
-                <button className={'pill' + (o.done ? ' done' : '')} style={{ background: o.color + '4d' }} onClick={() => p.onOpen(o)}>
-                  <span className="dot" style={{ background: o.color }} />{!o.task.kind_id && <Emoji char={KIND_PRESETS[o.task.kind]?.icon} size={14} />} {o.task.title}
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <AllDayRow list={list} p={p} />
       <div className="daycols" style={{ gridTemplateColumns: '52px 1fr' }}>
         <div className="timecol">{HOURS.map(h => <div key={h} className="hour">{h ? `${h}:00` : ''}</div>)}</div>
         <TimedColumn day={p.cursor} list={list} isToday={p.cursor === p.today} nowMin={nowMin} onOpen={p.onOpen} onNew={p.onNew} />

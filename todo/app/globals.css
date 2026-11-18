@@ -339,3 +339,23 @@ b, strong { font-weight: var(--w-head); }
 .weekday-row .chip { justify-content: center; padding: 9px 0; }
 .weekday-row .chip.sun:not(.on) { color: var(--coral); }
 .weekday-row .chip.sat:not(.on) { color: var(--sky); }
+
+/* ---- PC の DAY：午前・午後の2列で、スクロールせずに1日を見渡す ---- */
+.daysplit { display: flex; flex-direction: column; height: 100%; min-height: 560px; }
+.daysplit-body { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); min-height: 0; }
+.half { display: flex; flex-direction: column; min-height: 0; }
+.half + .half { border-left: 1.5px solid var(--line); }
+.half-head { display: flex; align-items: baseline; gap: 10px; padding: 12px 16px 8px; font-size: 16px; font-weight: var(--w-head); }
+.half-head span { font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.half-grid { flex: 1; display: grid; grid-template-columns: 50px minmax(0, 1fr); min-height: 0; padding-bottom: 12px; }
+.half-times { display: flex; flex-direction: column; }
+.half-times div { flex: 1; font-size: 12px; color: var(--faint); text-align: right; padding-right: 8px; transform: translateY(-8px); font-variant-numeric: tabular-nums; }
+.half-times div:first-child { transform: none; }
+.half-col { position: relative; display: flex; flex-direction: column; border-left: 1px solid var(--line-soft); }
+.half-col .slot { flex: 1; height: auto; min-height: 0; }
+.half-col .slot:last-of-type { border-bottom: 1px solid var(--line-soft); }
+.ev.ev-half { padding: 3px 8px; min-height: 20px; display: flex; align-items: flex-start; }
+.ev.ev-half .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; }
+.ev.ev-half .s { font-weight: var(--w-base); }
+.allday-wrap { flex-direction: row !important; flex-wrap: wrap; gap: 6px 14px !important; }
+.allday-wrap .row { max-width: 100%; }
