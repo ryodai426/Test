@@ -55,12 +55,32 @@ async function requireTask(userId: string, taskId: string) {
   return t;
 }
 
-/** 同じグループの他のメンバーに、付箋のお知らせを入れる */
-async function notifyMembers(groupId: string, actorId: string, kind: string, taskId: string, body: string, occDate: string | null = null) {
+/**
+ * 同じグループの他のメンバーに、付箋のお知らせを入れる。
+ * only を渡したら、その人たちだけに（予定を「表示する人」に選ばれた人）
+ */
+async function notifyMembers(groupId: string, actorId: string, kind: string, taskId: string, body: string, occDate: string | null = null, only: string[] | null = null) {
   await q(
     `INSERT INTO notifications (user_id, kind, actor_id, task_id, occ_date, body)
-     SELECT m.user_id, $3, $2, $4, $5, $6 FROM memberships m WHERE m.group_id = $1 AND m.user_id <> $2`,
-    [groupId, actorId, kind, taskId, occDate, body]);
+     SELECT m.user_id, $3, $2, $4, $5, $6 FROM memberships m
+      WHERE m.group_id = $1 AND m.user_id <> $2 AND ($7::uuid[] IS NULL OR m.user_id = ANY($7::uuid[]))`,
+    [groupId, actorId, kind, taskId, occDate, body, only]);
+}
+
+/**
+ * 予定を「表示する人」を整える。
+ * 個人グループ → いつも NULL（自分だけのグループなので）
+ * 共通（'all' や null）→ NULL ＝ グループの全員
+ * 人を選んだとき → そのグループのメンバーだけに絞る。誰もいなければ作った本人
+ */
+async function cleanAssignees(groupId: string, isPersonal: boolean, raw: unknown, fallbackUser: string): Promise<string[] | null> {
+  if (isPersonal || raw === null || raw === 'all' || raw === undefined) return null;
+  const ids = Array.isArray(raw) ? [...new Set(raw.map(String))] : [];
+  if (!ids.length) return [fallbackUser];
+  const rows = await q<{ user_id: string }>(
+    'SELECT user_id FROM memberships WHERE group_id = $1 AND user_id = ANY($2::uuid[])', [groupId, ids]).catch(() => []);
+  const ok = rows.map(r => r.user_id);
+  return ok.length ? ok : [fallbackUser];
 }
 
 async function personalGroupId(userId: string): Promise<string> {
@@ -208,16 +228,18 @@ route('POST', 'tasks', async ({ body }) => {
   const f = cleanTask(body, false);
   if (!f.title) throw bad('タイトルを入力してください');
   const kindId = await kindIdFor(groupId, body.kind_id);
+  // 表示する人：指定がなければ「自分だけ」（共通にするときは 'all'）
+  const assignees = await cleanAssignees(groupId, g.is_personal, 'assignees' in body ? body.assignees : [u.id], u.id);
   const t = await one<{ id: string }>(
-    `INSERT INTO tasks (user_id, group_id, status, title, description, kind, kind_id, color, date, time, duration_min, reminders, remind_all, repeat, detailed_at)
-     VALUES ($1,$2,'ready',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, now()) RETURNING id`,
-    [u.id, groupId, f.title, f.description, kindId ? 'general' : f.kind, kindId, f.color, f.date, f.time, f.duration_min, f.reminders, f.remind_all, f.repeat]);
+    `INSERT INTO tasks (user_id, group_id, status, title, description, kind, kind_id, assignees, color, date, time, duration_min, reminders, remind_all, repeat, detailed_at)
+     VALUES ($1,$2,'ready',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, now()) RETURNING id`,
+    [u.id, groupId, f.title, f.description, kindId ? 'general' : f.kind, kindId, assignees, f.color, f.date, f.time, f.duration_min, f.reminders, f.remind_all, f.repeat]);
   if (Array.isArray(body.items)) {
     for (const [i, label] of body.items.map((s: unknown) => str(s, 80)).filter(Boolean).entries()) {
       await q('INSERT INTO task_items (task_id, label, position) VALUES ($1,$2,$3)', [t!.id, label, i]);
     }
   }
-  if (!g.is_personal && g.notify_create) await notifyMembers(groupId, u.id, 'created', t!.id, `${u.name}さんが「${f.title}」を設定しました`);
+  if (!g.is_personal && g.notify_create) await notifyMembers(groupId, u.id, 'created', t!.id, `${u.name}さんが「${f.title}」を設定しました`, null, assignees);
   return t;
 });
 
@@ -238,6 +260,11 @@ route('PATCH', 'tasks/:id', async ({ body, params }) => {
   } else if (t.kind_id && groupId !== t.group_id) {
     f.kind_id = await kindIdFor(groupId, t.kind_id);
   }
+  // 表示する人：指定があれば整える。グループを移したら、新しいグループに合わせて整え直す
+  const targetGroup = groupId === t.group_id ? { is_personal: t.is_personal } : await one('SELECT is_personal FROM groups WHERE id = $1', [groupId]);
+  if ('assignees' in body || groupId !== t.group_id) {
+    f.assignees = await cleanAssignees(groupId, !!targetGroup?.is_personal, 'assignees' in body ? body.assignees : (t.assignees ?? 'all'), u.id);
+  }
   const becomingReady = t.status === 'draft' && body.status === 'ready';
   if (becomingReady) {
     if (!(f.title ?? t.title)) throw bad('タイトルを入力してください');
@@ -250,7 +277,10 @@ route('PATCH', 'tasks/:id', async ({ body, params }) => {
   }
   if (becomingReady || (f.group_id && t.status === 'ready')) {
     const g = await one('SELECT * FROM groups WHERE id = $1', [groupId]);
-    if (g && !g.is_personal && g.notify_create) await notifyMembers(groupId, u.id, 'created', t.id, `${u.name}さんが「${f.title ?? t.title}」を設定しました`);
+    if (g && !g.is_personal && g.notify_create) {
+      const who = 'assignees' in f ? (f.assignees as string[] | null) : t.assignees;
+      await notifyMembers(groupId, u.id, 'created', t.id, `${u.name}さんが「${f.title ?? t.title}」を設定しました`, null, who);
+    }
   }
   return { ok: true };
 });

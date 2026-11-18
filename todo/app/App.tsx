@@ -1,11 +1,12 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { addDays, DRAFT_STEPS, occursOn, reminderMessage, reminderTimes, KIND_PRESETS } from '@/lib/time';
-import { api, ApiError, isDemo, sw, localToday, occurrences, type Checklist, type Occ, type State, type Task } from './lib';
+import { api, ApiError, isDemo, isFor, sw, localToday, occurrences, type Checklist, type Occ, type State, type Task } from './lib';
 import Login from './components/Login';
 import Icon, { Logo, Scene } from './components/Icon';
 import Emoji, { EmojiText } from './components/Emoji';
 import TodayBrief from './components/TodayBrief';
+import MemberStrip from './components/Members';
 import { DayView, MonthView, WeekView, periodLabel } from './components/Calendar';
 import TaskEditor, { type EditorInit } from './components/TaskEditor';
 import {
@@ -30,6 +31,7 @@ export default function App() {
   const [today, setToday] = useState(localToday());
   const [cursor, setCursor] = useState(localToday());
   const [groupFilter, setGroupFilter] = useState('all');
+  const [viewMember, setViewMember] = useState<string | null>(null); // グループで、誰の予定を見ているか
   const [panel, setPanel] = useState<Panel>(null);
   const [editor, setEditor] = useState<EditorInit | null>(null);
   const [fullList, setFullList] = useState<Checklist | null>(null);
@@ -81,7 +83,7 @@ export default function App() {
   }, [load, params]);
 
   useEffect(() => { LS.set('view', view); }, [view]);
-  useEffect(() => { LS.set('group', groupFilter); }, [groupFilter]);
+  useEffect(() => { LS.set('group', groupFilter); setViewMember(null); }, [groupFilter]);
 
   // 表示中は20秒ごとに更新（スマホで入れた予定がPCにもすぐ出るように）
   useEffect(() => {
@@ -181,7 +183,8 @@ export default function App() {
       const myGroups = new Set(s.groups.map(g => g.id));
       for (const t of s.tasks) {
         if (t.status !== 'ready' || !t.time || !t.reminders.length || !myGroups.has(t.group_id)) continue;
-        if (t.user_id !== s.me!.id && !t.remind_all) continue;
+        // 自分あての予定だけ（表示する人に選ばれている／共通なら作った人か「全員に通知」）
+        if (!(t.assignees?.length ? t.assignees.includes(s.me!.id) : (t.user_id === s.me!.id || t.remind_all))) continue;
         for (const day of [td, addDays(td, 1)]) {
           if (!occursOn(t, day)) continue;
           if (t.repeat ? doneSet.has(t.id + '|' + day) : t.done_at) continue;
@@ -263,9 +266,13 @@ export default function App() {
   const me = state.me!;
   const currentGroup = state.groups.find(g => g.id === groupFilter);
   const drafts = state.tasks.filter(t => t.status === 'draft' && t.user_id === me.id);
-  const shoppingOpen = state.tasks.filter(t => t.kind === 'shopping' && t.status === 'ready' && !t.done_at && (groupFilter === 'all' || t.group_id === groupFilter));
+  const shoppingOpen = state.tasks.filter(t => t.kind === 'shopping' && t.status === 'ready' && !t.done_at && isFor(t, me.id, state) && (groupFilter === 'all' || t.group_id === groupFilter));
   const unread = state.notifications.filter(n => !n.read_at).length;
-  const someday = state.tasks.filter(t => t.status === 'ready' && !t.date && !t.done_at && t.kind !== 'shopping' && (groupFilter === 'all' || t.group_id === groupFilter));
+  const someday = state.tasks.filter(t => t.status === 'ready' && !t.date && !t.done_at && t.kind !== 'shopping' && isFor(t, me.id, state) && (groupFilter === 'all' || t.group_id === groupFilter));
+  // グループ（共有）を選んでいるときは、メンバーのアイコンを押して、その人の予定を見られる
+  const sharedGroup = currentGroup && !currentGroup.is_personal ? currentGroup : null;
+  const who = sharedGroup && viewMember && sharedGroup.members.some(m => m.id === viewMember) ? viewMember : me.id;
+  const whoName = who !== me.id ? sharedGroup?.members.find(m => m.id === who)?.name : null;
 
   function move(dir: number) {
     setCursor(c => {
@@ -303,9 +310,10 @@ export default function App() {
   }
 
   const calProps = {
-    state, cursor, today, groupFilter,
+    state, cursor, today, groupFilter, who,
     onOpen: (o: Occ) => setEditor({ task: o.task, occDay: o.day }),
-    onNew: (day: string, time?: string) => setEditor({ day, time, groupId: groupFilter !== 'all' ? groupFilter : undefined }),
+    // 他のメンバーの予定を見ているときに空き枠を押したら、その人あての予定として入れる
+    onNew: (day: string, time?: string) => setEditor({ day, time, groupId: groupFilter !== 'all' ? groupFilter : undefined, assignees: whoName ? [who] : undefined }),
     onToggle: toggleDone,
     onPickDay: (d: string) => { setCursor(d); setView('day'); },
   };
@@ -314,10 +322,11 @@ export default function App() {
     <>
       {currentGroup ? <span className="dot" style={{ background: currentGroup.color }} /> : null}
       {currentGroup ? currentGroup.name : 'すべて表示'}
+      {whoName && <span className="title-who">・{whoName}さんの予定</span>}
     </>
   );
 
-  const todayList = view === 'day' ? occurrences(state, cursor, groupFilter) : [];
+  const todayList = view === 'day' ? occurrences(state, cursor, groupFilter, who) : [];
 
   return (
     <div className="shell">
@@ -371,6 +380,10 @@ export default function App() {
           <button className="icon-btn only-mobile" onClick={() => setPanel('settings')} aria-label="設定"><Icon name="gear" /></button>
           <button className="icon-btn green only-mobile" onClick={() => setPanel('groups')} aria-label="グループ切り替え"><Icon name="menu" stroke={2.4} /></button>
         </div>
+        {sharedGroup && (
+          <MemberStrip state={state} group={sharedGroup} who={who} today={today}
+            onPick={id => setViewMember(id === me.id || id === viewMember ? null : id)} />
+        )}
         <div className="toolbar">
           <div className="seg">
             {(['day', 'week', 'month'] as View[]).map(v => (

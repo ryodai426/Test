@@ -55,10 +55,10 @@ export async function runDueReminders(now = Date.now()): Promise<{ sent: number 
   // ① 時間が決まっているタスク（会議・当番など）
   const tasks = await q<{
     id: string; user_id: string; group_id: string; title: string; date: string; time: string;
-    repeat: Repeat | null; reminders: string[]; remind_all: boolean; tz: string; done_at: string | null;
+    repeat: Repeat | null; reminders: string[]; remind_all: boolean; tz: string; done_at: string | null; assignees: string[] | null;
   }>(
     `SELECT t.id, t.user_id, t.group_id, t.title, to_char(t.date, 'YYYY-MM-DD') AS date, t.time, t.repeat, t.reminders,
-            t.remind_all, u.tz, t.done_at
+            t.remind_all, u.tz, t.done_at, t.assignees
        FROM tasks t JOIN users u ON u.id = t.user_id
       WHERE t.status = 'ready' AND t.time IS NOT NULL AND cardinality(t.reminders) > 0
         AND (t.repeat IS NOT NULL OR t.date BETWEEN current_date - 2 AND current_date + 2)`);
@@ -72,9 +72,12 @@ export async function runDueReminders(now = Date.now()): Promise<{ sent: number 
         if (!(await claim(`task:${t.id}:${day}:${r.key}`))) continue;
         const done = t.repeat ? await q('SELECT 1 FROM task_done WHERE task_id = $1 AND occ_date = $2', [t.id, day]) : [];
         if (done.length) continue;
-        const recipients = t.remind_all
-          ? (await q<{ user_id: string }>('SELECT user_id FROM memberships WHERE group_id = $1', [t.group_id])).map(m => m.user_id)
-          : [t.user_id];
+        // 表示する人が決まっていればその人たちへ。共通なら、作った人（「全員に通知」なら全員）
+        const recipients = t.assignees?.length
+          ? t.assignees
+          : t.remind_all
+            ? (await q<{ user_id: string }>('SELECT user_id FROM memberships WHERE group_id = $1', [t.group_id])).map(m => m.user_id)
+            : [t.user_id];
         const body = reminderMessage(t.title, r.key, t.time);
         for (const uid of recipients) {
           sent += await pushTo(uid, { title: '⏰ リマインド', body, url: `/?date=${day}`, tag: `task-${t.id}-${day}` });

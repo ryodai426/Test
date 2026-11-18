@@ -8,7 +8,7 @@ export type Group = {
 };
 export type Task = {
   id: string; user_id: string; group_id: string; status: 'draft' | 'ready'; title: string; description: string;
-  kind: string; kind_id: string | null; color: string | null; date: string | null; time: string | null; duration_min: number;
+  kind: string; kind_id: string | null; assignees: string[] | null; color: string | null; date: string | null; time: string | null; duration_min: number;
   reminders: string[]; remind_all: boolean; repeat: Repeat | null; captured_at: string; detailed_at: string | null;
   done_at: string | null; done_by: string | null; updated_at: string;
 };
@@ -80,11 +80,23 @@ export function fmtJpDate(s: string, withWeek = true): string {
 
 export type Occ = { task: Task; day: string; done: boolean; color: string; group: Group | undefined };
 
-export function occurrences(s: State, day: string, groupFilter: string): Occ[] {
+/**
+ * その予定が、who さんのカレンダーに出るか。
+ * 個人グループの予定 → 持ち主（自分）だけ。グループの予定 → 「共通」か、表示する人に選ばれていれば
+ */
+export function isFor(t: Task, who: string, s: State): boolean {
+  const g = s.groups.find(x => x.id === t.group_id);
+  if (!g || g.is_personal) return who === s.me?.id;
+  return !t.assignees || t.assignees.includes(who);
+}
+
+/** その日の予定。who を省略したら自分の予定 */
+export function occurrences(s: State, day: string, groupFilter: string, who?: string): Occ[] {
   const groups = new Map(s.groups.map(g => [g.id, g]));
   const doneSet = new Set(s.done.map(d => d.task_id + '|' + d.occ_date));
+  const person = who || s.me?.id || '';
   return s.tasks
-    .filter(t => t.status === 'ready' && (groupFilter === 'all' || t.group_id === groupFilter) && occursOn(t, day))
+    .filter(t => t.status === 'ready' && (groupFilter === 'all' || t.group_id === groupFilter) && isFor(t, person, s) && occursOn(t, day))
     .map(t => {
       const g = groups.get(t.group_id);
       return { task: t, day, group: g, color: t.color || g?.color || '#6B7280', done: t.repeat ? doneSet.has(t.id + '|' + day) : !!t.done_at };

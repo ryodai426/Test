@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { WEEK_LABELS } from '@/lib/time';
 import Icon, { Scene } from './Icon';
 import Emoji, { EmojiText } from './Emoji';
-import { sw, api, fmtJpDate, hhmm, localDateOf, localToday, PALETTE, type Checklist, type Group, type State, type Task } from '../lib';
+import { sw, isFor, api, fmtJpDate, hhmm, localDateOf, localToday, PALETTE, type Checklist, type Group, type State, type Task } from '../lib';
 
 function Sheet({ title, icon, onClose, children, foot, side = true }: { title: string; icon?: string; onClose: () => void; children: React.ReactNode; foot?: React.ReactNode; side?: boolean }) {
   return (
@@ -52,7 +52,7 @@ export function ShoppingPanel({ state, groupFilter, onClose, reload, onShoppingD
   onShoppingDone: () => void; notify: (m: string) => void;
 }) {
   const groups = new Map(state.groups.map(g => [g.id, g]));
-  const lists = state.tasks.filter(t => t.kind === 'shopping' && t.status === 'ready' && (groupFilter === 'all' || t.group_id === groupFilter));
+  const lists = state.tasks.filter(t => t.kind === 'shopping' && t.status === 'ready' && isFor(t, state.me!.id, state) && (groupFilter === 'all' || t.group_id === groupFilter));
   const open = lists.filter(t => !t.done_at);
   const done = lists.filter(t => t.done_at).slice(0, 5);
   const [newName, setNewName] = useState('');
@@ -73,7 +73,8 @@ export function ShoppingPanel({ state, groupFilter, onClose, reload, onShoppingD
   }
   async function create() {
     if (!newName.trim()) return;
-    await api('tasks', 'POST', { title: newName, kind: 'shopping', group_id: newGroup, date: null });
+    // 買い物リストは家族などで一緒に使うので、グループでは「共通（全員）」で作る
+    await api('tasks', 'POST', { title: newName, kind: 'shopping', group_id: newGroup, date: null, assignees: 'all' });
     setNewName('');
     reload();
   }

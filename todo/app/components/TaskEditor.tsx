@@ -5,7 +5,7 @@ import Icon from './Icon';
 import Emoji from './Emoji';
 import { api, hhmm, localToday, PALETTE, type State, type Task } from '../lib';
 
-export type EditorInit = { task?: Task; day?: string; time?: string; groupId?: string; kind?: string; occDay?: string; title?: string };
+export type EditorInit = { task?: Task; day?: string; time?: string; groupId?: string; kind?: string; occDay?: string; title?: string; assignees?: string[] };
 
 const REMINDER_ORDER = ['eve', '60', '30', '10', '5', '0'];
 const WEEKDAYS = [1, 2, 3, 4, 5];
@@ -28,6 +28,9 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
   const [duration, setDuration] = useState(t?.duration_min || 60);
   const [reminders, setReminders] = useState<string[]>(t && !isDraft ? t.reminders : KIND_PRESETS[init.kind || 'general'].reminders);
   const [remindAll, setRemindAll] = useState(t?.remind_all || false);
+  const meId = state.me!.id;
+  // 表示する人：null ＝ 共通（全員）。新しく入れる予定は「自分だけ」から
+  const [assignees, setAssignees] = useState<string[] | null>(t ? (t.assignees ?? null) : (init.assignees ?? [meId]));
   const [color, setColor] = useState<string | null>(t?.color || null);
   const [repeat, setRepeat] = useState<Repeat | null>(t?.repeat || null);
   const [newItems, setNewItems] = useState<string[]>([]);
@@ -45,6 +48,12 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
 
   function pickGroup(id: string) {
     setGroupId(id);
+    // 別のグループに移したら、そのグループにいない人は外す（誰もいなくなれば自分だけ）
+    const g = state.groups.find(x => x.id === id);
+    if (g && assignees) {
+      const keep = assignees.filter(a => g.members.some(m => m.id === a));
+      setAssignees(keep.length ? keep : [meId]);
+    }
     // 自分たちで足した種類はグループごとなので、別のグループに移したら外す
     if (kindId && !(state.kinds || []).some(k => k.id === kindId && k.group_id === id)) { setKindId(null); setKind('general'); }
   }
@@ -86,7 +95,8 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
     setBusy(true);
     const body = {
       group_id: groupId, title, description, kind, kind_id: kindId, color, date: date || null, time: date && time ? time : null,
-      duration_min: duration, reminders: time ? reminders : [], remind_all: remindAll,
+      duration_min: duration, reminders: time ? reminders : [], remind_all: assignees === null && remindAll,
+      ...(group && !group.is_personal ? { assignees: assignees === null ? 'all' : assignees } : {}),
       repeat: date ? repeat : null,
     };
     try {
@@ -166,7 +176,29 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
               </button>
             ))}
           </div>
-          {group && !group.is_personal && <div className="small muted" style={{ marginTop: 6 }}>{group.members.length}人のメンバー全員に見えます</div>}
+          {group && !group.is_personal && (
+            <>
+              <div className="label">表示する人</div>
+              <div className="row wrap">
+                <button className={'chip' + (assignees === null ? ' on' : '')} onClick={() => setAssignees(null)}>共通（全員）</button>
+                {[...group.members].sort((a, b) => (a.id === meId ? -1 : b.id === meId ? 1 : 0)).map(m => {
+                  const on = !!assignees?.includes(m.id);
+                  return (
+                    <button key={m.id} className={'chip' + (on ? ' on' : '')} aria-pressed={on} onClick={() => {
+                      if (assignees === null) { setAssignees([m.id]); return; }
+                      if (on && assignees.length === 1) return; // 誰もいなくはできない
+                      setAssignees(on ? assignees.filter(x => x !== m.id) : [...assignees, m.id]);
+                    }}>{m.id === meId ? '自分' : m.name}</button>
+                  );
+                })}
+              </div>
+              <div className="small muted" style={{ marginTop: 6 }}>
+                {assignees === null
+                  ? `${group.name}の全員（${group.members.length}人）のカレンダーに出ます`
+                  : `${assignees.map(a => (a === meId ? '自分' : group.members.find(m => m.id === a)?.name + 'さん')).join('・')}のカレンダーに出ます。他のメンバーも、アイコンを押すと見られます`}
+              </div>
+            </>
+          )}
 
           <div className="label">種類</div>
           <div className="row wrap">
@@ -232,7 +264,7 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
                   <button key={r} className={'chip' + (reminders.includes(r) ? ' on' : '')} onClick={() => toggleReminder(r)}>{REMINDER_LABELS[r]}</button>
                 ))}
               </div>
-              {group && !group.is_personal && (
+              {group && !group.is_personal && assignees === null && (
                 <label className="row small" style={{ marginTop: 10 }}>
                   <input type="checkbox" checked={remindAll} onChange={e => setRemindAll(e.target.checked)} />
                   グループのメンバー全員にも通知する
