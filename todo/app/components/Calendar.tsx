@@ -180,7 +180,7 @@ function TimedColumn({ day, list, isToday, nowMin, onOpen, onNew, onToggle, comp
   return (
     <div className="col selectable" ref={colRef} {...handlers}>
       {HOURS.map(h => (
-        <div key={h} className="slot" title={`${h}:00 に予定を追加（長押しでなぞると時間を選べます）`} />
+        <div key={h} className="slot" title={`${h}:00`} />
       ))}
       {range && (
         <div className="sel-range" style={{ top: (range.s / 60) * hourPx, height: ((range.e - range.s) / 60) * hourPx }}>
@@ -271,7 +271,7 @@ function HalfDay({ base, list, p, nowMin }: { base: number; list: Occ[]; p: Prop
         </div>
         <div className="half-col selectable" ref={colRef} {...handlers}>
           {HALF_HOURS.map(h => (
-            <div key={h} className="slot" title={`${base / 60 + h}:00 に予定を追加（押したまま動かすと時間を選べます）`} />
+            <div key={h} className="slot" title={`${base / 60 + h}:00`} />
           ))}
           {range && (
             <div className="sel-range" style={{ top: `${pct(range.s)}%`, height: `${pct(range.e) - pct(range.s)}%` }}>
@@ -289,7 +289,7 @@ function HalfDay({ base, list, p, nowMin }: { base: number; list: Occ[]; p: Prop
               onKeyDown={ev => { if (ev.key === 'Enter') p.onOpen(o); }}>
               <DoneButton o={o} onToggle={p.onToggle} size={20} />
               <div className="t">
-                <span className="s">{s > spanOf(o).s ? '（続き）' : o.task.time}</span>{' '}
+                <span className="s">{s > spanOf(o).s ? '続き' : o.task.time}</span>{' '}
                 <Title o={o} />
                 {o.group && !o.group.is_personal && <span className="s">{' '}・{o.group.name}</span>}
                 {isHeld(p.state, o) && <span className="held-tag">保留</span>}

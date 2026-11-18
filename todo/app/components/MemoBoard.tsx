@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { api, hhmm, localDateOf, localToday, fmtJpDate, type State, type Task } from '../lib';
 import Icon, { Scene } from './Icon';
+import { act, draftTask, P } from '../store';
 
 // 付箋の紙の色と傾き（番号から決めて、毎回同じ並びに）
 const PAPERS = ['var(--yellow)', 'var(--lilac)', 'var(--peach)', 'var(--green-2)', '#CDE8FF'];
@@ -20,21 +21,19 @@ export default function MemoBoard({ state, onClose, onOpen, reload, notify }: {
   const [text, setText] = useState('');
   const today = localToday();
 
-  async function add(e: React.FormEvent) {
+  function add(e: React.FormEvent) {
     e.preventDefault();
     const t = text.trim();
     if (!t) return;
-    await api('tasks', 'POST', { quick: true, title: t });
     setText('');
-    notify('メモを貼りました');
-    reload();
+    act(P.addTask(draftTask(state, { status: 'draft', title: t, detailed_at: null })), () => api('tasks', 'POST', { quick: true, title: t }));
   }
 
   return (
     <div className="brief memo-board" onClick={onClose} role="dialog" aria-label="メモ">
       <div className="brief-inner">
         <div className="row">
-          <div className="brief-hello grow">貼ってあるメモ</div>
+          <div className="brief-hello grow" />
           <button className="icon-btn memo-close" onClick={onClose} aria-label="閉じる"><Icon name="close" size={20} /></button>
         </div>
         <h2 className="brief-date">メモ</h2>
@@ -57,7 +56,7 @@ export default function MemoBoard({ state, onClose, onOpen, reload, notify }: {
                   animationDelay: `${0.06 + i * 0.05}s`,
                 }}
                 onClick={e => { e.stopPropagation(); onOpen(t); }}>
-                <div className="brief-title memo-title">{t.title || <span className="muted">（ひとことなし）</span>}</div>
+                <div className="brief-title memo-title">{t.title || <span className="muted">ひとことなし</span>}</div>
                 {t.description && <div className="memo-desc">{t.description}</div>}
                 <div className="brief-meta">{d === today ? '今日' : fmtJpDate(d)} {hhmm(t.captured_at)}</div>
               </button>

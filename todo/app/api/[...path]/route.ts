@@ -139,7 +139,7 @@ route('POST', 'auth/register', async ({ req, body }) => {
   const tz = str(body.tz, 60) || 'Asia/Tokyo';
   const exists = await one('SELECT 1 FROM users WHERE lower(name) = lower($1)', [name]);
   if (exists) {
-    throw new HttpError(409, 'この名前はすでに使われています。自分の名前なら、使っている端末の「設定 → この端末以外でも使う」で6桁のコードを出して、「コードでログイン」から入ってください。');
+    throw new HttpError(409, 'この名前はすでに使われています。自分の名前なら、使っている端末の「設定 → ほかの端末で使う」で6桁のコードを出して、「コードでログイン」から入ってください。');
   }
   const user = await tx(async c => {
     const u = (await c.query('INSERT INTO users (name, tz) VALUES ($1, $2) RETURNING id', [name, tz])).rows[0];

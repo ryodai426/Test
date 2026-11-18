@@ -4,6 +4,7 @@ import { addDays, KIND_PRESETS, WEEK_LABELS, weekday } from '@/lib/time';
 import { api, isFor, localDateOf, occurrences, type Occ, type State, type Task } from '../lib';
 import Emoji from './Emoji';
 import Icon, { Scene } from './Icon';
+import { act, P } from '../store';
 
 const EMOJIS = ['👍', '❤️', '💪', '👏'];
 
@@ -185,9 +186,8 @@ export function Review({ state, today, onClose, reload }: { state: State; today:
     : done.length >= 3 ? 'しっかり進んだ1日でした。えらい！'
     : 'ちゃんと前に進みました。おつかれさま！';
 
-  async function react(task: Task, day: string, emoji: string) {
-    await api('reactions', 'POST', { task_id: task.id, occ_date: day, emoji }).catch(() => {});
-    reload();
+  function react(task: Task, day: string, emoji: string) {
+    act(P.addReaction(task.id, day, me.id, emoji), () => api('reactions', 'POST', { task_id: task.id, occ_date: day, emoji }));
   }
 
   return (
@@ -204,7 +204,7 @@ export function Review({ state, today, onClose, reload }: { state: State; today:
 
         <h3 className="review-sec">こなしたタスク</h3>
         <div className="brief-board">
-          {done.length === 0 && <Note i={0} color="#F5E211"><div className="brief-title">明日のじぶんに期待</div><div className="brief-meta">完了ボタンを押すと、ここに並びます</div></Note>}
+          {done.length === 0 && <Note i={0} color="#F5E211"><div className="brief-title">明日のじぶんに期待</div></Note>}
           {done.map((x, i) => (
             <Note key={x.o.task.id + x.o.day} i={i} color={x.o.color} className={x.early ? 'early' : ''}>
               {x.early > 0 && <div className="early-badge"><Emoji char="🎉" size={16} /> {pick(PRAISES, x.o.task.id)(x.early)}</div>}
@@ -218,7 +218,7 @@ export function Review({ state, today, onClose, reload }: { state: State; today:
 
         {team.length > 0 && (
           <>
-            <h3 className="review-sec">仲間のがんばり<span>絵文字を送ると、みんなの振り返りにも表示されます</span></h3>
+            <h3 className="review-sec">仲間のがんばり</h3>
             <div className="brief-board">
               {team.map((x, i) => (
                 <Note key={x.o.task.id + x.o.day + i} i={i + 3} color={x.o.color}>
@@ -240,7 +240,7 @@ export function Review({ state, today, onClose, reload }: { state: State; today:
             return (
               <Note key={t.id} i={i + 1} color={t.color || g?.color || '#EBC1FF'}>
                 <div className="brief-time">{t.status === 'draft' ? 'メモ' : t.date ? `${Number(t.date.slice(5, 7))}/${Number(t.date.slice(8))}` : 'いつか'}</div>
-                <div className="brief-title">{t.title || '（ひとことなし）'}</div>
+                <div className="brief-title">{t.title || 'ひとことなし'}</div>
                 {t.status === 'draft' && t.description && <div className="memo-desc">{t.description}</div>}
               </Note>
             );
@@ -276,7 +276,6 @@ export function ReviewPrompt({ onOpen, onClose }: { onOpen: (skip: boolean) => v
       <div className="banner-card review-prompt">
         <div className="big"><Emoji char="🎉" size={44} /></div>
         <h2>今日の振り返りを見ますか？</h2>
-        <div className="muted">今日もおつかれさまでした。こなしたタスクと明日の予定を、付箋でふり返れます。</div>
         <div className="confirm-actions">
           <button className="btn white big" onClick={() => onOpen(skip)}>見る<span className="orb"><Icon name="right" size={18} stroke={2.4} /></span></button>
           <button className="btn" onClick={() => onClose(skip)}>そのまま閉じる</button>

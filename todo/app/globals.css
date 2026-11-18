@@ -532,3 +532,16 @@ b, strong { font-weight: var(--w-head); }
 .board-note h4 { margin: 0; }
 .board .scene { max-height: 14vh; }
 @media (max-width: 899px) { .board .scene { max-height: 9vh; } }
+
+.note-del { width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: var(--sub); flex: none; }
+.note-del:hover { background: rgba(255, 255, 255, .8); color: var(--danger); }
+
+/* ---- 入力画面：設定をたたむ ---- */
+.settings-toggle { display: flex; align-items: center; gap: 10px; width: 100%; margin-top: 16px; padding: 12px 14px; border-radius: 14px; background: var(--cream); text-align: left; }
+.settings-toggle:hover { background: var(--cream-2); }
+.settings-toggle.close { width: auto; margin-top: 14px; padding: 8px 14px; }
+.settings-summary { flex: 1; min-width: 0; font-size: 13px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.settings-open { font-size: 13px; flex: none; }
+
+/* Tab で選んでいる切り替えボタン */
+.toolbar [data-nav]:focus-visible { outline: 3px solid var(--sky); outline-offset: 2px; position: relative; z-index: 1; }

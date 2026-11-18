@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { WEEK_LABELS } from '@/lib/time';
 import Icon, { Scene } from './Icon';
 import { Board, Note, PAPERS, TAPES } from './Board';
+import { act, isTmp, tmpId, P } from '../store';
 import Emoji, { EmojiText } from './Emoji';
 import { sw, isFor, api, fmtJpDate, hhmm, localDateOf, localToday, PALETTE, type Checklist, type Group, type State, type Task } from '../lib';
 
@@ -45,8 +46,8 @@ export function FullChecklist({ list, onClose, reload }: { list: Checklist; onCl
   async function flip(id: string) {
     const next = items.map(i => (i.id === id ? { ...i, checked: !i.checked } : i));
     setItems(next);
-    await toggleCheck(id, !!next.find(i => i.id === id)?.checked);
-    reload();
+    const checked = !!next.find(i => i.id === id)?.checked;
+    act(P.setCheck(id, checked), () => toggleCheck(id, checked));
   }
   return (
     <div className="fullcheck">
@@ -55,7 +56,6 @@ export function FullChecklist({ list, onClose, reload }: { list: Checklist; onCl
         <button className="icon-btn" onClick={onClose} aria-label="閉じる"><Icon name="close" /></button>
       </div>
       <h2>{list.name}</h2>
-      <div className="sub">指差し確認しながらタップ</div>
       <div className="progress"><span>{items.filter(i => i.checked).length} / {items.length}</span></div>
       <div className="items">
         {items.map(i => (
@@ -83,12 +83,15 @@ function ChecklistEditor({ list, onDone }: { list?: Checklist; onDone: () => voi
   const [items, setItems] = useState<{ id?: string; label: string }[]>(list?.items.map(i => ({ id: i.id, label: i.label })) || [{ label: '' }]);
   const [err, setErr] = useState('');
 
-  async function save() {
+  function save() {
     if (!name.trim()) { setErr('名前を入力してください'); return; }
     const body = { name, trigger, show_at: trigger === 'time' ? showAt : null, weekdays, items: items.filter(i => i.label.trim()) };
-    if (list) await api(`checklists/${list.id}`, 'PATCH', body);
-    else await api('checklists', 'POST', body);
+    const view: Checklist = {
+      id: list?.id || tmpId(), name, trigger, show_at: body.show_at, weekdays, position: list?.position ?? 99,
+      items: body.items.map(i => ({ id: i.id || tmpId(), label: i.label, checked: list?.items.find(x => x.id === i.id)?.checked || false })),
+    };
     onDone();
+    act(P.upsertChecklist(view), () => (list ? api(`checklists/${list.id}`, 'PATCH', body) : api('checklists', 'POST', body)));
   }
 
   return (
@@ -105,7 +108,6 @@ function ChecklistEditor({ list, onDone }: { list?: Checklist; onDone: () => voi
         <>
           <div className="row" style={{ marginTop: 10 }}>
             <input type="time" value={showAt} onChange={e => setShowAt(e.target.value)} style={{ width: 140 }} />
-            <span className="small muted">に通知して、開いたら全画面で表示</span>
           </div>
           <div className="row wrap" style={{ marginTop: 8 }}>
             {[1, 2, 3, 4, 5, 6, 0].map(w => (
@@ -115,7 +117,6 @@ function ChecklistEditor({ list, onDone }: { list?: Checklist; onDone: () => voi
           </div>
         </>
       )}
-      {trigger === 'after_shopping' && <div className="small muted" style={{ marginTop: 8 }}>買い物リストを全部チェックした瞬間に表示します（傘・買った物の置き忘れ防止）</div>}
       <div className="label">チェック項目</div>
       {items.map((it, i) => (
         <div key={i} className="row" style={{ marginBottom: 6 }}>
@@ -127,7 +128,7 @@ function ChecklistEditor({ list, onDone }: { list?: Checklist; onDone: () => voi
       <button className="btn small" onClick={() => setItems(xs => [...xs, { label: '' }])}>＋ 項目を追加</button>
       {err && <div className="err">{err}</div>}
       <div className="row" style={{ marginTop: 14 }}>
-        {list && <button className="btn danger small" onClick={async () => { if (confirm(`「${list.name}」を削除しますか？`)) { await api(`checklists/${list.id}`, 'DELETE'); onDone(); } }}>削除</button>}
+        {list && <button className="btn danger small" onClick={() => { if (confirm(`「${list.name}」を削除しますか？`)) { onDone(); act(P.removeChecklist(list.id), () => api(`checklists/${list.id}`, 'DELETE')); } }}>削除</button>}
         <div className="grow" />
         <button className="btn small" onClick={onDone}>キャンセル</button>
         <button className="btn primary small" onClick={save}>保存</button>
@@ -139,11 +140,11 @@ function ChecklistEditor({ list, onDone }: { list?: Checklist; onDone: () => voi
 export function ChecklistPanel({ state, onClose, reload, onOpenFull }: { state: State; onClose: () => void; reload: () => Promise<void> | void; onOpenFull: (c: Checklist) => void }) {
   const [editing, setEditing] = useState<string | null>(null);
   const triggerText = (c: Checklist) =>
-    c.trigger === 'time' ? `${c.show_at} に表示（${c.weekdays.length === 7 ? '毎日' : [1, 2, 3, 4, 5, 6, 0].filter(w => c.weekdays.includes(w)).map(w => WEEK_LABELS[w]).join('')}）`
-      : c.trigger === 'after_shopping' ? '買い物が終わったら表示' : '自分で開く';
+    c.trigger === 'time' ? `${c.show_at}・${c.weekdays.length === 7 ? '毎日' : [1, 2, 3, 4, 5, 6, 0].filter(w => c.weekdays.includes(w)).map(w => WEEK_LABELS[w]).join('')}`
+      : c.trigger === 'after_shopping' ? '買い物のあと' : '';
   return (
-    <Board label="持ち物チェックリスト" eyebrow="出かける前に、指差し確認" title="持ち物チェック" onClose={onClose}
-      sum={`${state.checklists.length}枚・チェックは毎日リセット`}>
+    <Board label="持ち物チェックリスト" eyebrow="" title="持ち物チェック" onClose={onClose}
+      sum={`${state.checklists.length}枚`}>
       <div className="brief-board board-wide">
         {state.checklists.map((c, i) => {
           const done = c.items.filter(x => x.checked).length;
@@ -156,17 +157,21 @@ export function ChecklistPanel({ state, onClose, reload, onOpenFull }: { state: 
                   <div className="row">
                     <h4 className="note-title grow">{c.name}</h4>
                     <span className="note-count">{done}/{c.items.length}</span>
+                    <button className="note-del" aria-label={`「${c.name}」を削除`} title="削除" onClick={() => {
+                      if (isTmp(c.id) || !confirm(`「${c.name}」を削除しますか？`)) return;
+                      act(P.removeChecklist(c.id), () => api(`checklists/${c.id}`, 'DELETE'));
+                    }}><Icon name="trash" size={17} /></button>
                   </div>
-                  <div className="small muted">{triggerText(c)}</div>
+                  {triggerText(c) && <div className="small muted">{triggerText(c)}</div>}
                   <div className="note-items">
                     {c.items.map(it => (
                       <div key={it.id} className={'li' + (it.checked ? ' on' : '')} role="checkbox" aria-checked={it.checked} tabIndex={0}
-                        onClick={async () => { await toggleCheck(it.id, !it.checked); reload(); }}>
+                        onClick={() => { if (!isTmp(it.id)) act(P.setCheck(it.id, !it.checked), () => toggleCheck(it.id, !it.checked)); }}>
                         <span className={'box' + (it.checked ? ' on' : '')}>{it.checked && <Icon name="check" size={15} stroke={2.6} />}</span>
                         <span className="grow">{it.label}</span>
                       </div>
                     ))}
-                    {c.items.length === 0 && <div className="small muted">項目がありません。「編集」から足せます</div>}
+                    {c.items.length === 0 && <div className="small muted">項目なし</div>}
                   </div>
                   <div className="row note-actions">
                     <button className="btn primary small" onClick={() => onOpenFull(c)}><Icon name="pack" size={16} />全画面でチェック</button>
@@ -179,7 +184,7 @@ export function ChecklistPanel({ state, onClose, reload, onOpenFull }: { state: 
         })}
         <Note i={state.checklists.length} paper="rgba(255,255,255,.55)" tape="var(--yellow)" className="note-add check-note">
           {editing === 'new' ? <ChecklistEditor onDone={() => { setEditing(null); reload(); }} /> : (
-            <button className="note-add-btn" onClick={() => setEditing('new')}>＋ 新しいチェックリスト<span>例：会議の日、ジムに行く日、旅行</span></button>
+            <button className="note-add-btn" onClick={() => setEditing('new')}>＋ 新しいチェックリスト</button>
           )}
         </Note>
       </div>
@@ -215,7 +220,7 @@ export function GroupDrawer({ state, current, onPick, onClose, reload }: {
       <div className="hr" />
       {creating ? (
         <div>
-          <input type="text" placeholder="グループ名（例：家族、営業チーム）" value={name} onChange={e => setName(e.target.value)} autoFocus />
+          <input type="text" placeholder="例：家族、営業チーム" value={name} onChange={e => setName(e.target.value)} autoFocus />
           <div className="row" style={{ gap: 10, marginTop: 10 }}>
             {PALETTE.map(c => <button key={c} className={'swatch' + (color === c ? ' on' : '')} style={{ background: c }} onClick={() => setColor(c)} />)}
           </div>
@@ -252,11 +257,10 @@ export function MembersPanel({ state, group, onClose, reload, notify, onLeft }: 
       <div className="row"><span className="dot" style={{ background: group.color }} /><b>{group.name}</b></div>
       {!group.is_personal && (
         <>
-          <div className="label">メンバー（{group.members.length}人）</div>
-          {group.members.map(m => <div key={m.id} className="li"><span className="grow">{m.name}{m.id === state.me!.id ? '（あなた）' : ''}</span></div>)}
+          <div className="label">メンバー・{group.members.length}人</div>
+          {group.members.map(m => <div key={m.id} className="li"><span className="grow">{m.name}{m.id === state.me!.id ? '・自分' : ''}</span></div>)}
           <div className="label">メンバーを招待</div>
           <button className="btn primary block" onClick={copy}><Icon name="link" size={18} />招待リンクを送る／コピー</button>
-          <div className="small muted" style={{ marginTop: 6, wordBreak: 'break-all' }}>{inviteUrl}</div>
         </>
       )}
       <div className="label">グループ名</div>
@@ -274,7 +278,7 @@ export function MembersPanel({ state, group, onClose, reload, notify, onLeft }: 
       </div>
       {!group.is_personal && (
         <>
-          <div className="label">共有設定（グループ全員に反映）</div>
+          <div className="label">共有設定</div>
           <label className="li"><input type="checkbox" checked={group.notify_create} onChange={e => patch({ notify_create: e.target.checked })} /><span className="grow">タスク作成を付箋で知らせる</span></label>
           <label className="li"><input type="checkbox" checked={group.notify_done} onChange={e => patch({ notify_done: e.target.checked })} /><span className="grow">タスク完了を付箋で知らせる</span></label>
           <div className="hr" />
@@ -302,7 +306,7 @@ function KindsEditor({ state, group, reload, notify }: { state: State; group: Gr
   }
   return (
     <>
-      <div className="label">タスクの種類（{group.is_personal ? '自分だけ' : 'グループのみんなで共有'}）</div>
+      <div className="label">タスクの種類</div>
       <div className="row wrap">
         {kinds.map(k => (
           <span key={k.id} className="chip">
@@ -314,7 +318,6 @@ function KindsEditor({ state, group, reload, notify }: { state: State; group: Gr
             }}><Icon name="close" size={14} stroke={2.4} /></button>
           </span>
         ))}
-        {kinds.length === 0 && <span className="small muted">まだありません。予定の入力画面の「＋ 種類を追加」からも足せます。</span>}
       </div>
       <div className="row" style={{ marginTop: 8 }}>
         <input type="text" placeholder="例：営業訪問、通院、塾" value={name} maxLength={20} onChange={e => setName(e.target.value)}
@@ -368,7 +371,7 @@ export function SettingsPanel({ state, onClose, notify, reload, onReview }: {
       const p = await Notification.requestPermission();
       setPerm(p);
       if (p !== 'granted') { notify('通知が許可されませんでした'); return; }
-      if (!state.pushKey) { notify('サーバーの通知設定（VAPID）がまだです'); return; }
+      if (!state.pushKey) { notify('サーバーの通知設定がまだです'); return; }
       const reg = await sw()!.ready;
       const s = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8Array(state.pushKey) });
       await api('push/subscribe', 'POST', { subscription: s.toJSON() });
@@ -403,15 +406,15 @@ export function SettingsPanel({ state, onClose, notify, reload, onReview }: {
           notify(e.target.checked ? '夕方に振り返りを聞きます' : '振り返りの案内をスキップします');
           reload();
         }} />
-        <span className="grow">夕方（17時以降）に開いたとき、振り返りを見るか聞く</span>
+        <span className="grow">17時以降に振り返りを聞く</span>
       </label>
 
-      <div className="label">この端末以外でも使う（スマホ ⇄ 会社のPC）</div>
-      <div className="small muted" style={{ marginBottom: 8 }}>もう1台の端末でこのアプリのURLを開き、「コードでログイン」に下の6桁を入力してください。同じ予定・メモがどちらからでも見えて、入れられます。</div>
+      <div className="label">ほかの端末で使う</div>
+      <div className="small muted" style={{ marginBottom: 8 }}>ほかの端末の「コードでログイン」に入力</div>
       {code ? (
         <>
           <div className="code-big">{code}</div>
-          <div className="small muted" style={{ textAlign: 'center', marginTop: 6 }}>あと {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')} 有効・1回だけ使えます</div>
+          <div className="small muted" style={{ textAlign: 'center', marginTop: 6 }}>あと {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}</div>
         </>
       ) : <button className="btn primary block" onClick={issue}>6桁のコードを出す</button>}
       {devices.length > 0 && (
@@ -422,10 +425,10 @@ export function SettingsPanel({ state, onClose, notify, reload, onReview }: {
 
       <div className="label">この端末の通知</div>
       {!supported ? (
-        <div className="small muted">{!state.pushKey ? 'プッシュ通知はまだ使えません（サーバーの通知設定が必要）。アプリを開いている間は、時間になると画面に大きく表示します。' : ios && !standalone ? 'iPhoneでは、Safariの共有ボタン →「ホーム画面に追加」してから開くと通知を受け取れます。' : 'このブラウザはプッシュ通知に対応していません。アプリを開いている間は画面内でお知らせします。'}</div>
+        <div className="small muted">{!state.pushKey ? 'プッシュ通知は準備中です' : ios && !standalone ? 'ホーム画面に追加すると通知を受け取れます' : 'このブラウザは通知に対応していません'}</div>
       ) : sub ? (
         <div className="row">
-          <span className="grow small"><Emoji char="🔔" size={18} /> オン（この端末に届きます）</span>
+          <span className="grow small"><Emoji char="🔔" size={18} /> オン</span>
           <button className="btn small" onClick={async () => { const r = await api('push/test', 'POST'); notify(r.sent ? 'テスト通知を送りました' : '送れませんでした'); }}>テスト</button>
           <button className="btn small" onClick={disablePush}>オフ</button>
         </div>
@@ -435,16 +438,15 @@ export function SettingsPanel({ state, onClose, notify, reload, onReview }: {
           {perm === 'denied' && <div className="small err">ブラウザの設定で通知がブロックされています。サイトの設定から許可してください。</div>}
         </>
       )}
-      <div className="small muted" style={{ marginTop: 8 }}>スマホとPCの両方でオンにすると、両方に届きます。</div>
 
-      <div className="label">キーボード操作（PC）</div>
+      <div className="label">キーボード操作</div>
       <div className="small muted" style={{ lineHeight: 2 }}>
-        <kbd>N</kbd> ひとことメモ　<kbd>A</kbd> 予定を追加　<kbd>T</kbd> 今日　<kbd>D</kbd>/<kbd>W</kbd>/<kbd>M</kbd> 日・週・月　<kbd>←</kbd><kbd>→</kbd> 前後へ
+        <kbd>N</kbd> メモ　<kbd>A</kbd> 予定を追加　<kbd>T</kbd> 今日　<kbd>D</kbd>/<kbd>W</kbd>/<kbd>M</kbd> 日・週・月　<kbd>←</kbd><kbd>→</kbd> 前後　<kbd>Tab</kbd> 切り替えを選ぶ → <kbd>Enter</kbd>
       </div>
 
       <div className="hr" />
       <button className="btn danger block" onClick={async () => {
-        if (!confirm('この端末からログアウトしますか？（もう一度入るには、他の端末でコードを出す必要があります）')) return;
+        if (!confirm('この端末からログアウトしますか？')) return;
         await api('auth/logout', 'POST');
         try { localStorage.removeItem('state-cache-v1'); } catch { /* なし */ }
         location.reload();
@@ -464,7 +466,7 @@ export function NoticePanel({ state, onClose, onReview, reviewSeen }: { state: S
       {evening && (
         <button className={'notice notice-review' + (reviewSeen ? '' : ' unread')} onClick={onReview}>
           <Emoji char="🎉" size={22} />
-          <span className="grow"><b>今日の振り返り</b><span className="small muted">今日こなしたタスクと明日の予定を見る（日付が変わるまで）</span></span>
+          <span className="grow"><b>今日の振り返り</b></span>
           <Icon name="right" size={18} />
         </button>
       )}
