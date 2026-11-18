@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { occurrences, toMin, type Group, type State } from '../lib';
+import Icon from './Icon';
 
 // アイコンの色（文字が読める明るい色だけ）
 const AVATAR_COLORS = ['#8ED462', '#2BA0FF', '#FF705D', '#F5E211', '#EBC1FF', '#FFBE9F'];
@@ -45,28 +46,27 @@ function statusOf(state: State, group: Group, memberId: string, today: string, n
 }
 
 /**
- * グループを選んだときに上に並ぶ、メンバーのアイコン。
- * 押すとその人の予定に切り替わる。アイコンの下に「今やっていること」を出す。
+ * 上のバー（グループ名の横）に並ぶ、メンバーのアイコンと状態の点だけ（何をしているかは出さない）。
+ * 押すと、その人の予定に切り替わり、仕事の詳細（MemberFocus）が開く。点の色：コーラル＝予定中、黄＝このあと予定、緑＝空き
  */
-export default function MemberStrip({ state, group, who, today, onPick }: {
+export default function MemberDots({ state, group, who, today, onPick }: {
   state: State; group: Group; who: string; today: string; onPick: (id: string) => void;
 }) {
   const now = useNowMin();
   const me = state.me!.id;
   const members = [...group.members].sort((a, b) => (a.id === me ? -1 : b.id === me ? 1 : 0));
+  const word = { now: '予定中', next: 'このあと予定', free: '空き' };
   return (
-    <div className="member-strip" data-keynav="h" role="tablist" aria-label={`${group.name}のメンバー`}>
+    <div className="member-dots" role="tablist" aria-label={`${group.name}のメンバー`}>
       {members.map(m => {
         const st = statusOf(state, group, m.id, today, now);
-        const on = who === m.id;
+        const on = who === m.id && m.id !== me;
+        const name = m.id === me ? '自分' : m.name;
         return (
-          <button key={m.id} role="tab" aria-selected={on} className={'member' + (on ? ' on' : '')} onClick={() => onPick(m.id)}>
-            <span className="member-av">
-              <Avatar id={m.id} name={m.name} size={42} />
-              <span className={'member-dot ' + st.kind} />
-            </span>
-            <span className="member-name">{m.id === me ? '自分' : m.name}</span>
-            <span className={'member-st ' + st.kind}>{st.text}</span>
+          <button key={m.id} role="tab" aria-selected={on} className={'mdot' + (on ? ' on' : '')} onClick={() => onPick(m.id)}
+            aria-label={`${name}・${word[st.kind]}`} title={name}>
+            <Avatar id={m.id} name={m.name} size={32} />
+            <span className={'member-dot ' + st.kind} />
           </button>
         );
       })}
@@ -75,11 +75,51 @@ export default function MemberStrip({ state, group, who, today, onPick }: {
 }
 
 /**
+ * スマホ：上のバーの左（アプリのアイコンの場所）に、見ている人（ふつうは自分）のアイコンを1つだけ。
+ * 押すと、メンバー全員のアイコンと仕事の状況をポップアップで出し、選んだ人の予定に切り替える
+ */
+export function MemberMenu({ state, group, who, today, onPick }: {
+  state: State; group: Group; who: string; today: string; onPick: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const now = useNowMin();
+  const me = state.me!.id;
+  const members = [...group.members].sort((a, b) => (a.id === me ? -1 : b.id === me ? 1 : 0));
+  const cur = members.find(m => m.id === who) || members[0];
+  const st = statusOf(state, group, cur.id, today, now);
+  return (
+    <>
+      <button className="mdot mmenu-btn" onClick={() => setOpen(true)} aria-haspopup="dialog" aria-expanded={open}
+        aria-label={`メンバーと仕事の状況：${cur.id === me ? '自分' : cur.name}`}>
+        <Avatar id={cur.id} name={cur.name} size={34} />
+        <span className={'member-dot ' + st.kind} />
+      </button>
+      {open && (
+        <div className="mmenu-back" onClick={() => setOpen(false)}>
+          <div className="mmenu" role="dialog" aria-label={`${group.name}のメンバー`} onClick={e => e.stopPropagation()}>
+            <div className="mmenu-head">{group.name}</div>
+            {members.map(m => {
+              const s = statusOf(state, group, m.id, today, now);
+              return (
+                <button key={m.id} className={'mmenu-row' + (m.id === who ? ' on' : '')} onClick={() => { setOpen(false); onPick(m.id); }}>
+                  <span className="mmenu-av"><Avatar id={m.id} name={m.name} size={38} /><span className={'member-dot ' + s.kind} /></span>
+                  <span className="grow"><b>{m.id === me ? '自分' : m.name}</b><span className={'mmenu-st ' + s.kind}>{s.text}</span></span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
  * メンバーのアイコンを押したときに出る、その人の仕事の詳細。
  * 今やっていること（時間・残り時間・説明）、次の予定、今日の進み具合。
  */
-export function MemberFocus({ state, group, who, today, onOpenTask }: {
-  state: State; group: Group; who: string; today: string; onOpenTask: (taskId: string, day: string) => void;
+export function MemberFocus({ state, group, who, today, onOpenTask, onClose }: {
+  state: State; group: Group; who: string; today: string; onOpenTask: (taskId: string, day: string) => void; onClose: () => void;
 }) {
   const now = useNowMin();
   const m = group.members.find(x => x.id === who);
@@ -97,6 +137,7 @@ export function MemberFocus({ state, group, who, today, onOpenTask }: {
         <Avatar id={m.id} name={m.name} size={34} />
         <div className="grow"><b>{m.name}さん</b><span className="mf-progress">今日 {done}/{list.length} 完了</span></div>
         <div className="mf-bar" aria-hidden="true"><span style={{ width: `${list.length ? (done / list.length) * 100 : 0}%` }} /></div>
+        <button className="icon-btn mf-close" onClick={onClose} aria-label="自分の予定に戻る"><Icon name="close" size={18} /></button>
       </div>
       {cur ? (
         <button className="mf-now" onClick={() => onOpenTask(cur.task.id, today)} style={{ ['--c' as string]: cur.color }}>
