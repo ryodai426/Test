@@ -74,6 +74,8 @@ export default function App() {
     setConfirms(xs => (xs.some(x => x.taskId === taskId && x.day === day) ? xs : [...xs, { taskId, day }]));
   }, []);
   const [toast, setToast] = useState('');
+  const [gotoOpen, setGotoOpen] = useState(false); // Ctrl+G：日付を指定して移動
+  const [keysOpen, setKeysOpen] = useState(false); // F1：ショートカットの一覧
   const [captureOpen, setCaptureOpen] = useState(false);
   const [capture, setCapture] = useState('');
   const [params] = useState(() => (typeof window === 'undefined' ? new URLSearchParams() : new URLSearchParams(location.search)));
@@ -351,26 +353,53 @@ export default function App() {
     if (due) { LS.set(`cl:${due.id}:${td}`, '1'); setFullList(due); }
   }, [state, fullList, brief]);
 
-  // ---- キーボード操作（会社のPC向け） ---------------------------------------------
+  // ---- キーボード操作（会社のPC向け。Office の操作に合わせる） ----------------------
+  // Tab / Shift+Tab：ホーム画面のボタンを順に移動（ブラウザに任せる）。矢印：まとまり（data-keynav）の中で移動。Enter：押す
+  // F6 / Shift+F6：エリアの間を移動。Ctrl+G：日付を指定して移動。F1・?：ショートカットの一覧
   useEffect(() => {
+    const focusables = (root: Element) => [...root.querySelectorAll<HTMLElement>('button, [role="button"][tabindex], a[href], input[type="text"]')]
+      .filter(el => !(el as HTMLButtonElement).disabled && el.offsetParent !== null);
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement;
+      const overlay = !!(editor || panel || fullList || banner || confirms.length || memoBoard || review || brief || gotoOpen || keysOpen);
+      // どこにいても使えるもの（入力欄の中でも）
+      if (!overlay && e.key === 'F6') {
+        e.preventDefault();
+        const areas = ['.sidebar', '.topbar', '.toolbar', '.content', '.bottombar'].map(q => document.querySelector(q)).filter((a): a is Element => !!a && focusables(a).length > 0);
+        const cur = areas.findIndex(a => a.contains(document.activeElement));
+        const next = areas[(cur + (e.shiftKey ? -1 : 1) + areas.length) % areas.length];
+        focusables(next).find(x => x.tagName !== 'INPUT')?.focus();
+        return;
+      }
+      if (!overlay && (e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'g') { e.preventDefault(); setGotoOpen(true); return; }
+      if (!overlay && e.key === 'F1') { e.preventDefault(); setKeysOpen(true); return; }
+      // 左のメニューの「すぐメモ」の欄からも、↑↓ でボタンへ移れる
+      if (!overlay && el.tagName === 'INPUT' && (e.key === 'ArrowDown' || e.key === 'ArrowUp') && el.closest('[data-keynav="v"]')) {
+        e.preventDefault();
+        const list = focusables(el.closest('[data-keynav="v"]')!).filter(x => x.tagName !== 'INPUT');
+        (e.key === 'ArrowDown' ? list.find(x => x.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING) : [...list].reverse().find(x => x.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING))?.focus();
+        return;
+      }
       if (e.metaKey || e.ctrlKey || e.altKey || /INPUT|TEXTAREA|SELECT/.test(el.tagName)) return;
       if (brief) { setBrief(false); return; } // PC ではどのキーでも閉じる
       if (memoBoard) { if (e.key === 'Escape') setMemoBoard(false); return; }
       if (review) { if (e.key === 'Escape') setReview(false); return; }
-      if (e.key === 'Tab' && !editor && !panel && !fullList && !banner && !confirms.length) {
-        const navs = [...document.querySelectorAll<HTMLButtonElement>('.toolbar [data-nav]')];
-        if (navs.length) {
+      if (gotoOpen || keysOpen) { if (e.key === 'Escape') { setGotoOpen(false); setKeysOpen(false); } return; }
+      if (editor || panel || fullList || banner) { if (e.key === 'Escape') { setEditor(null); setPanel(null); setFullList(null); setBanner(null); } return; }
+      // 矢印：まとまりの中で、となりのボタンへ（左のメニューは上下、ツールバーなどは左右）
+      const group = el.closest<HTMLElement>('[data-keynav]');
+      if (group && /^Arrow/.test(e.key)) {
+        const vertical = group.dataset.keynav === 'v';
+        const dir = (vertical ? { ArrowUp: -1, ArrowDown: 1 } : { ArrowLeft: -1, ArrowRight: 1 } as Record<string, number>)[e.key as 'ArrowUp'];
+        if (dir) {
           e.preventDefault();
-          const i = navs.indexOf(document.activeElement as HTMLButtonElement);
-          const next = i < 0 ? (e.shiftKey ? navs.length - 1 : 0) : (i + (e.shiftKey ? -1 : 1) + navs.length) % navs.length;
-          navs[next].focus();
+          const list = focusables(group).filter(x => x.tagName !== 'INPUT');
+          const i = list.indexOf(el);
+          list[(i + dir + list.length) % list.length]?.focus();
           return;
         }
       }
-      if (e.key === 'Enter' && el.matches?.('.toolbar [data-nav]')) return; // 選んでいるボタンを押す（ブラウザに任せる）
-      if (editor || panel || fullList || banner) { if (e.key === 'Escape') { setEditor(null); setPanel(null); setFullList(null); setBanner(null); } return; }
+      if (e.key === 'Escape' && el !== document.body) { el.blur(); return; }
       const k = e.key.toLowerCase();
       if (k === 'n') { e.preventDefault(); if (window.innerWidth >= 900) sideCaptureRef.current?.focus(); else openCapture(); }
       else if (k === 'a') { e.preventDefault(); setEditor({ day: cursor, groupId: groupFilter !== 'all' ? groupFilter : undefined }); }
@@ -378,8 +407,9 @@ export default function App() {
       else if (k === 'd') setView('day');
       else if (k === 'w') setView('week');
       else if (k === 'm') setView('month');
-      else if (e.key === 'ArrowLeft') move(-1);
-      else if (e.key === 'ArrowRight') move(1);
+      else if (e.key === '?') setKeysOpen(true);
+      else if (e.key === 'ArrowLeft' && !group) move(-1);
+      else if (e.key === 'ArrowRight' && !group) move(1);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -451,7 +481,7 @@ export default function App() {
   return (
     <div className="shell">
       {/* ---------- PC：左のサイドバー ---------- */}
-      <aside className="sidebar">
+      <aside className="sidebar" data-keynav="v">
         <div className="brand"><Logo size={34} /><div><b>わすれないYO</b><small>{isDemo() ? 'Trail Notes · Demo' : 'Trail Notes'}</small></div></div>
         <div className="capture-box">
           <label className="cap-label" htmlFor="side-capture">思いついたら、すぐメモ</label>
@@ -492,7 +522,7 @@ export default function App() {
       {/* ---------- メイン ---------- */}
       <main className="main">
         <div className="head">
-        <div className="topbar">
+        <div className="topbar" data-keynav="h">
           <div className="title"><span className="only-mobile" style={{ display: 'inline-flex' }}><Logo size={30} /></span>{groupTitle}</div>
           <button className="icon-btn only-mobile" onClick={() => setPanel('notices')} aria-label="お知らせ"><Icon name="bell" />{unread > 0 && <span className="badge">{unread}</span>}</button>
           <button className="icon-btn" onClick={() => (currentGroup ? setPanel('members') : setPanel('groups'))} aria-label="メンバー"><Icon name="users" /></button>
@@ -506,7 +536,7 @@ export default function App() {
           <MemberFocus state={state} group={sharedGroup} who={who} today={today}
             onOpenTask={(taskId, day) => { const t = state.tasks.find(x => x.id === taskId); if (t) setEditor({ task: t, occDay: day }); }} />
         )}
-        <div className="toolbar">
+        <div className="toolbar" data-keynav="h">
           <div className="seg">
             {(['day', 'week', 'month'] as View[]).map(v => (
               <button key={v} data-nav className={view === v ? 'on' : ''} onClick={() => {
@@ -548,7 +578,7 @@ export default function App() {
         </div>
 
         {/* ---------- スマホ：下のボタン ---------- */}
-        <nav className="bottombar">
+        <nav className="bottombar" data-keynav="h">
           <button onClick={() => setPanel('checklists')}><span className="i"><Icon name="pack" /></span>リスト</button>
           <button className="capture-btn" onClick={openCapture} aria-label={drafts.length ? `ひとことメモ・メモ${drafts.length}枚` : 'ひとことメモ'}>
             <span className="i"><Icon name="plus" size={28} stroke={2.6} />{drafts.length > 0 && <span className="badge">{drafts.length}</span>}</span>
@@ -686,8 +716,51 @@ export default function App() {
         </div>
       )}
 
+      {gotoOpen && <GotoDate initial={cursor} onClose={() => setGotoOpen(false)} onGo={d => { setGotoOpen(false); setCursor(d); }} />}
+      {keysOpen && <KeysHelp onClose={() => setKeysOpen(false)} />}
       <ConfirmHost />
       {toast && <div className="toast"><EmojiText text={toast} /></div>}
+    </div>
+  );
+}
+
+/** Ctrl+G：日付を指定して移動 */
+function GotoDate({ initial, onClose, onGo }: { initial: string; onClose: () => void; onGo: (d: string) => void }) {
+  const [d, setD] = useState(initial);
+  return (
+    <div className="banner" onClick={onClose}>
+      <div className="banner-card scope-card" role="dialog" aria-label="日付へ移動" onClick={e => e.stopPropagation()}>
+        <h2>日付へ移動</h2>
+        <input type="date" value={d} autoFocus onChange={e => setD(e.target.value)} aria-label="日付"
+          onKeyDown={e => { if (e.key === 'Enter' && d) { e.preventDefault(); onGo(d); } if (e.key === 'Escape') { e.preventDefault(); onClose(); } }} />
+        <div className="confirm-actions">
+          <button className="btn big" onClick={() => d && onGo(d)} disabled={!d}>移動</button>
+          <button className="btn" onClick={onClose}>キャンセル</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export const SHORTCUTS: [string[], string][] = [
+  [['Tab'], '次のボタンへ'], [['Shift', 'Tab'], '前のボタンへ'], [['↑', '↓', '←', '→'], 'メニューやツールバーの中で移動'], [['Enter'], '選んだボタンを押す'],
+  [['F6'], '左のメニュー・上のバー・カレンダーを移動'], [['Ctrl', 'G'], '日付へ移動'], [['N'], 'すぐメモ'], [['A'], '予定を追加'], [['T'], '今日'],
+  [['D'], 'DAY'], [['W'], 'WEEK'], [['M'], 'MONTH'], [['←', '→'], '前・次の日／週／月'], [['Esc'], '閉じる'], [['F1'], 'この一覧'],
+];
+
+/** F1・?：ショートカットの一覧 */
+function KeysHelp({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="banner" onClick={onClose}>
+      <div className="banner-card scope-card keys-card" role="dialog" aria-label="ショートカット" onClick={e => e.stopPropagation()}>
+        <h2>ショートカット</h2>
+        <div className="keys-list">
+          {SHORTCUTS.map(([ks, label]) => (
+            <div key={label + ks.join()} className="keys-row"><span>{ks.map(k => <kbd key={k}>{k}</kbd>)}</span><span>{label}</span></div>
+          ))}
+        </div>
+        <button className="btn block" style={{ marginTop: 14 }} onClick={onClose} autoFocus>閉じる</button>
+      </div>
     </div>
   );
 }

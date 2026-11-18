@@ -479,7 +479,7 @@ export function SettingsPanel({ state, onClose, notify, reload, onReview }: {
 
       <div className="label">キーボード操作</div>
       <div className="small muted" style={{ lineHeight: 2 }}>
-        <kbd>N</kbd> メモ　<kbd>A</kbd> 予定を追加　<kbd>T</kbd> 今日　<kbd>D</kbd>/<kbd>W</kbd>/<kbd>M</kbd> 日・週・月　<kbd>←</kbd><kbd>→</kbd> 前後　<kbd>Tab</kbd> 切り替えを選ぶ → <kbd>Enter</kbd>
+        <kbd>Tab</kbd>/<kbd>Shift</kbd>+<kbd>Tab</kbd> ボタンを移動　<kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> メニューの中で移動　<kbd>Enter</kbd> 押す　<kbd>F6</kbd> エリアを移動　<kbd>Ctrl</kbd>+<kbd>G</kbd> 日付へ移動　<kbd>N</kbd> メモ　<kbd>A</kbd> 予定を追加　<kbd>T</kbd> 今日　<kbd>D</kbd>/<kbd>W</kbd>/<kbd>M</kbd> 日・週・月　<kbd>F1</kbd> 一覧
       </div>
 
       {skippedConfirms && (
