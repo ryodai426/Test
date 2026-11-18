@@ -52,7 +52,7 @@ export default function TodayBrief({ state, today, onClose }: { state: State; to
               }}>
               <div className="brief-time">{o.task.time || '終日'}</div>
               <div className="brief-title">
-                {!o.task.kind_id && <><Emoji char={KIND_PRESETS[o.task.kind]?.icon} size={18} />{' '}</>}{o.task.title}
+                {o.task.starred && <span className="star-mark">★</span>}{!o.task.kind_id && <><Emoji char={KIND_PRESETS[o.task.kind]?.icon} size={18} />{' '}</>}{o.task.title}
               </div>
               <div className="brief-meta">
                 {[kindName(state, o.task.kind_id), o.group?.name, o.done ? '完了' : ''].filter(Boolean).join('・')}

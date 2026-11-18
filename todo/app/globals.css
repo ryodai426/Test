@@ -377,3 +377,47 @@ b, strong { font-weight: var(--w-head); }
 .member-st.now { color: var(--ink); }
 .title-who { font-size: 14px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 899px) { .member-strip { padding-top: 8px; } .member { width: 84px; } }
+
+/* ---- 星マーク ---- */
+.star-mark { color: #E3B400; margin-right: 3px; font-size: .95em; }
+.star-btn { width: 42px; height: 42px; border-radius: 50%; font-size: 24px; line-height: 1; color: var(--faint); background: var(--cream); display: inline-flex; align-items: center; justify-content: center; }
+.star-btn.on { color: #E3B400; background: #FFF6C2; }
+
+/* ---- タイムスケジュール上の完了ボタン ---- */
+.ev.has-check { padding-left: 32px; cursor: pointer; }
+.ev.has-check.compact { padding-left: 24px; }
+.ev.ev-half.has-check { padding-left: 30px; }
+.ev-check { position: absolute; left: 5px; top: 4px; border-radius: 50%; border: 2px solid rgba(44, 46, 42, .35); background: var(--card); color: transparent; display: inline-flex; align-items: center; justify-content: center; z-index: 2; transition: transform .12s, background .12s; }
+.ev-check:hover { border-color: var(--ink); color: var(--sub); transform: scale(1.08); }
+.ev-check.on { background: var(--green); border-color: var(--green); color: var(--ink); }
+.ev.compact .ev-check { left: 3px; top: 3px; }
+.held-tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 6px; background: var(--card); color: var(--sub); font-size: 10.5px; vertical-align: 1px; }
+.ev.compact .held-tag { margin: 2px 0 0; }
+
+/* ---- メモを最低限で ---- */
+.detail-toggle { display: flex; gap: 10px; align-items: flex-start; margin-top: 18px; padding: 12px 14px; border-radius: 16px; background: var(--cream); cursor: pointer; }
+.detail-toggle input { width: 20px; height: 20px; margin-top: 1px; accent-color: var(--green); flex: none; }
+.detail-toggle small { display: block; color: var(--sub); font-size: 12px; margin-top: 2px; }
+
+/* ---- メモを見る（付箋のボード） ---- */
+.memo-board .memo-close { background: var(--card); }
+.memo-add { display: flex; gap: 8px; margin-top: 16px; max-width: 520px; cursor: default; }
+.memo-add input { border-color: transparent; }
+.memo-note { text-align: left; cursor: pointer; min-height: 130px; }
+.memo-note:hover { filter: brightness(1.02); }
+.memo-title { font-size: 16px; }
+.memo-desc { font-size: 13px; line-height: 1.6; color: var(--ink); opacity: .85; white-space: pre-wrap; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* ---- 完了しましたか？ ---- */
+.confirm-card { background: var(--card); }
+.confirm-card .big { background: var(--green); }
+.confirm-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
+.confirm-actions .btn.big { background: var(--green); }
+.confirm-actions .btn.big .orb { background: var(--card); }
+
+.confirm-list { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; max-height: 46vh; overflow: auto; text-align: left; }
+.confirm-row { background: var(--cream); border-radius: 16px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.confirm-title { font-size: 15px; word-break: break-word; }
+.confirm-title span { margin-left: 8px; font-size: 12px; color: var(--sub); }
+.confirm-btns { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 6px; }
+.confirm-btns .btn:not(.primary) { background: var(--card); }

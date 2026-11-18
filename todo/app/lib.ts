@@ -8,11 +8,12 @@ export type Group = {
 };
 export type Task = {
   id: string; user_id: string; group_id: string; status: 'draft' | 'ready'; title: string; description: string;
-  kind: string; kind_id: string | null; assignees: string[] | null; color: string | null; date: string | null; time: string | null; duration_min: number;
+  kind: string; kind_id: string | null; assignees: string[] | null; starred: boolean; color: string | null; date: string | null; time: string | null; duration_min: number;
   reminders: string[]; remind_all: boolean; repeat: Repeat | null; captured_at: string; detailed_at: string | null;
   done_at: string | null; done_by: string | null; updated_at: string;
 };
 export type Kind = { id: string; group_id: string; name: string };
+export type Followup = { task_id: string; occ_date: string; state: 'snoozed' | 'held'; next_at: string | null; snooze_count: number };
 export type Item = { id: string; task_id: string; label: string; checked: boolean; position: number };
 export type Checklist = {
   id: string; name: string; trigger: 'time' | 'after_shopping' | 'manual'; show_at: string | null; weekdays: number[];
@@ -25,6 +26,7 @@ export type State = {
   items: Item[]; reactions: { task_id: string; occ_date: string; user_id: string; emoji: string }[];
   checklists: Checklist[]; notifications: Notice[]; pushKey: string | null;
   kinds: Kind[];
+  followups: Followup[];
 };
 
 export class ApiError extends Error {
@@ -102,6 +104,27 @@ export function occurrences(s: State, day: string, groupFilter: string, who?: st
       return { task: t, day, group: g, color: t.color || g?.color || '#6B7280', done: t.repeat ? doneSet.has(t.id + '|' + day) : !!t.done_at };
     })
     .sort((a, b) => (a.task.time || '').localeCompare(b.task.time || ''));
+}
+
+/** 重要な順：星付き → 設定した時間が長い順 → 時刻のない予定（月表示で上から3件に使う） */
+export function byImportance(a: Occ, b: Occ): number {
+  if (a.task.starred !== b.task.starred) return a.task.starred ? -1 : 1;
+  const da = a.task.time ? a.task.duration_min : -1;
+  const db = b.task.time ? b.task.duration_min : -1;
+  if (da !== db) return db - da;
+  return (a.task.time || '99').localeCompare(b.task.time || '99');
+}
+
+/** 「完了しましたか？」を聞く相手か：表示する人／共通なら作った人／個人グループなら持ち主 */
+export function asksMe(t: Task, s: State): boolean {
+  const me = s.me?.id;
+  const g = s.groups.find(x => x.id === t.group_id);
+  if (!g || g.is_personal) return t.user_id === me;
+  return t.assignees?.length ? t.assignees.includes(me || '') : t.user_id === me;
+}
+
+export function followupOf(s: State, taskId: string, day: string): Followup | undefined {
+  return (s.followups || []).find(f => f.task_id === taskId && f.occ_date === day);
 }
 
 // 参考サイトの色（緑・青・コーラル・黄・ライラック・ピーチ・茶・墨）

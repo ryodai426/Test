@@ -1,16 +1,17 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { addDays, DRAFT_STEPS, occursOn, reminderMessage, reminderTimes, KIND_PRESETS } from '@/lib/time';
-import { api, ApiError, isDemo, isFor, sw, localToday, occurrences, type Checklist, type Occ, type State, type Task } from './lib';
+import { api, ApiError, asksMe, followupOf, isDemo, isFor, sw, localToday, occurrences, type Checklist, type Occ, type State, type Task } from './lib';
 import Login from './components/Login';
 import Icon, { Logo, Scene } from './components/Icon';
 import Emoji, { EmojiText } from './components/Emoji';
 import TodayBrief from './components/TodayBrief';
 import MemberStrip from './components/Members';
+import MemoBoard from './components/MemoBoard';
 import { DayView, MonthView, WeekView, periodLabel } from './components/Calendar';
 import TaskEditor, { type EditorInit } from './components/TaskEditor';
 import {
-  ChecklistPanel, DraftsPanel, FullChecklist, GroupDrawer, MembersPanel, NoticePanel, SettingsPanel, ShoppingPanel, checklistDue,
+  ChecklistPanel, FullChecklist, GroupDrawer, MembersPanel, NoticePanel, SettingsPanel, ShoppingPanel, checklistDue,
 } from './components/Panels';
 
 type View = 'day' | 'week' | 'month';
@@ -38,6 +39,12 @@ export default function App() {
   const [brief, setBrief] = useState(false);
   const [stickies, setStickies] = useState<Sticky[]>([]);
   const [banner, setBanner] = useState<{ icon: string; title: string; body: string } | null>(null);
+  const [memoBoard, setMemoBoard] = useState(false);
+  // 「完了しましたか？」の順番待ち（1つずつ聞く）
+  const [confirms, setConfirms] = useState<{ taskId: string; day: string }[]>([]);
+  const enqueueConfirm = useCallback((taskId: string, day: string) => {
+    setConfirms(xs => (xs.some(x => x.taskId === taskId && x.day === day) ? xs : [...xs, { taskId, day }]));
+  }, []);
   const [toast, setToast] = useState('');
   const [captureOpen, setCaptureOpen] = useState(false);
   const [capture, setCapture] = useState('');
@@ -120,6 +127,8 @@ export default function App() {
   function openFromParams(p: URLSearchParams, s: State) {
     const edit = p.get('edit');
     if (edit) { const t = s.tasks.find(x => x.id === edit); if (t) setEditor({ task: t }); }
+    const cf = p.get('confirm');
+    if (cf && s.tasks.some(x => x.id === cf)) enqueueConfirm(cf, p.get('day') || localToday());
     const cl = p.get('checklist');
     if (cl) { const c = s.checklists.find(x => x.id === cl); if (c) setFullList(c); }
     const d = p.get('date');
@@ -131,7 +140,10 @@ export default function App() {
     const container = sw();
     if (!container) return;
     const onMsg = (e: MessageEvent) => {
-      if (e.data?.type === 'push') {
+      if (e.data?.type === 'push' && e.data.data?.confirm) {
+        enqueueConfirm(e.data.data.confirm.taskId, e.data.data.confirm.day);
+        load();
+      } else if (e.data?.type === 'push') {
         const d = e.data.data || {};
         setBanner({ icon: (d.title || '🔔').split(' ')[0], title: d.title?.split(' ').slice(1).join(' ') || 'お知らせ', body: d.body || '' });
         load();
@@ -196,21 +208,46 @@ export default function App() {
           }
         }
       }
-      // 未記入メモ：2分→5分→10分で、だんだん強く
+      // 何も書かずに保存したメモだけ：2分→5分→10分で、だんだん強く（ひとことあれば十分なので知らせない）
       for (const t of s.tasks) {
-        if (t.status !== 'draft' || t.user_id !== s.me!.id) continue;
+        if (t.status !== 'draft' || t.user_id !== s.me!.id || t.title || t.description) continue;
         DRAFT_STEPS.forEach((step, i) => {
           const at = new Date(t.captured_at).getTime() + step.min * 60000;
           const key = `fired:draft:${t.id}:${step.min}`;
           if (at > now || at < now - 120000 || LS.get(key)) return;
           LS.set(key, '1');
-          if (i === DRAFT_STEPS.length - 1) setBanner({ icon: '📋', title: '未記入のメモ', body: step.text(t.title) });
+          if (i === DRAFT_STEPS.length - 1) setBanner({ icon: '📋', title: 'さっきのメモ', body: step.text(t.title) });
           else setStickies(xs => [...xs, { key: key, kind: 'draft' as const, body: step.text(t.title), taskId: t.id }].slice(-4));
         });
       }
     };
+    // 終わる時間から30分たっても完了していない予定に「完了しましたか？」（まだ → 15分後にもう一度、保留 → もう聞かない）
+    const checkDone = () => {
+      const s = stateRef.current;
+      if (!s) return;
+      const now = Date.now();
+      const td = localToday();
+      const doneSet = new Set(s.done.map(d => d.task_id + '|' + d.occ_date));
+      for (const t of s.tasks) {
+        if (t.status !== 'ready' || !t.time || t.kind === 'shopping' || !asksMe(t, s) || !occursOn(t, td)) continue;
+        if (t.repeat ? doneSet.has(t.id + '|' + td) : t.done_at) continue;
+        const [y, mo, d] = td.split('-').map(Number);
+        const [h, mi] = t.time.split(':').map(Number);
+        const endAt = new Date(y, mo - 1, d, h, mi).getTime() + Math.max(20, t.duration_min) * 60000;
+        if (new Date(endAt).getDate() !== d) continue; // 日をまたぐ予定は対象外
+        if (now < endAt + 30 * 60000) continue;
+        const f = followupOf(s, t.id, td);
+        if (f?.state === 'held') continue;
+        if (f?.state === 'snoozed' && f.next_at && new Date(f.next_at).getTime() > now) continue;
+        const key = `asked:${t.id}:${td}:${f?.snooze_count || 0}`;
+        if (LS.get(key)) continue;
+        LS.set(key, '1');
+        enqueueConfirm(t.id, td);
+      }
+    };
     check();
-    const id = setInterval(check, 15000);
+    checkDone();
+    const id = setInterval(() => { check(); checkDone(); }, 15000);
     return () => clearInterval(id);
   }, [state === null]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -244,6 +281,7 @@ export default function App() {
       const el = e.target as HTMLElement;
       if (e.metaKey || e.ctrlKey || e.altKey || /INPUT|TEXTAREA|SELECT/.test(el.tagName)) return;
       if (brief) { setBrief(false); return; } // PC ではどのキーでも閉じる
+      if (memoBoard) { if (e.key === 'Escape') setMemoBoard(false); return; }
       if (editor || panel || fullList || banner) { if (e.key === 'Escape') { setEditor(null); setPanel(null); setFullList(null); setBanner(null); } return; }
       const k = e.key.toLowerCase();
       if (k === 'n') { e.preventDefault(); if (window.innerWidth >= 900) sideCaptureRef.current?.focus(); else openCapture(); }
@@ -337,11 +375,11 @@ export default function App() {
           <label className="cap-label" htmlFor="side-capture">思いついたら、すぐメモ</label>
           <input id="side-capture" ref={sideCaptureRef} type="text" placeholder="ひとことだけでOK" value={capture} onChange={e => setCapture(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); saveCapture(capture.trim(), true); } if (e.key === 'Escape') (e.target as HTMLInputElement).blur(); }} />
-          <div className="hint"><kbd>Enter</kbd> で未記入メモに保存（空でもOK）・<kbd>N</kbd> でここへ</div>
+          <div className="hint"><kbd>Enter</kbd> でメモに貼る（空でもOK）・<kbd>N</kbd> でここへ</div>
         </div>
         <button className="btn primary block big" onClick={() => setEditor({ day: cursor, groupId: groupFilter !== 'all' ? groupFilter : undefined })}>予定・タスクを追加<span className="orb"><Icon name="plus" size={20} stroke={2.4} /></span></button>
         <div style={{ height: 8 }} />
-        <button className="side-link" onClick={() => setPanel('drafts')}><Icon name="memo" size={19} />未記入のメモ {drafts.length > 0 && <span className="count alert">{drafts.length}</span>}</button>
+        <button className="side-link" onClick={() => setMemoBoard(true)}><Icon name="memo" size={19} />メモを見る {drafts.length > 0 && <span className="count">{drafts.length}</span>}</button>
         <button className="side-link" onClick={() => setPanel('shopping')}><Icon name="cart" size={19} />買い物リスト <span className="count">{shoppingOpen.length || ''}</span></button>
         <button className="side-link" onClick={() => setPanel('checklists')}><Icon name="pack" size={19} />持ち物チェック</button>
         <button className="side-link" onClick={() => setPanel('notices')}><Icon name="bell" size={19} />お知らせ {unread > 0 && <span className="count alert">{unread}</span>}</button>
@@ -419,7 +457,7 @@ export default function App() {
 
         {/* ---------- スマホ：下のボタン ---------- */}
         <nav className="bottombar">
-          <button onClick={() => setPanel('drafts')}><span className="i"><Icon name="memo" /></span>未記入{drafts.length > 0 && <span className="badge">{drafts.length}</span>}</button>
+          <button onClick={() => setMemoBoard(true)}><span className="i"><Icon name="memo" /></span>メモ{drafts.length > 0 && <span className="badge">{drafts.length}</span>}</button>
           <button onClick={() => setPanel('shopping')}><span className="i"><Icon name="cart" /></span>買い物</button>
           <button className="capture-btn" onClick={openCapture} aria-label="ひとことメモ"><span className="i"><Icon name="plus" size={28} stroke={2.6} /></span>メモ</button>
           <button onClick={() => setPanel('checklists')}><span className="i"><Icon name="pack" /></span>持ち物</button>
@@ -451,7 +489,8 @@ export default function App() {
             else setEditor(e => (e?.task ? { ...e } : e));
           }} />
       )}
-      {panel === 'drafts' && <DraftsPanel state={state} onClose={() => setPanel(null)} reload={load} onOpen={(t: Task) => { setPanel(null); setEditor({ task: t }); }} />}
+      {memoBoard && <MemoBoard state={state} onClose={() => setMemoBoard(false)} reload={load} notify={notify}
+        onOpen={(t: Task) => { setMemoBoard(false); setEditor({ task: t }); }} />}
       {panel === 'shopping' && <ShoppingPanel state={state} groupFilter={groupFilter} onClose={() => setPanel(null)} reload={load} onShoppingDone={afterShopping} notify={notify} />}
       {panel === 'checklists' && <ChecklistPanel state={state} onClose={() => setPanel(null)} reload={load} onOpenFull={c => { setPanel(null); setFullList(c); }} />}
       {panel === 'groups' && <GroupDrawer state={state} current={groupFilter} onClose={() => setPanel(null)} reload={load} onPick={id => { setGroupFilter(id); setPanel(id !== 'all' && !state.groups.find(g => g.id === id) ? 'members' : null); }} />}
@@ -459,6 +498,43 @@ export default function App() {
       {panel === 'settings' && <SettingsPanel state={state} onClose={() => setPanel(null)} notify={notify} />}
       {panel === 'notices' && <NoticePanel state={state} onClose={() => { setPanel(null); load(); }} />}
       {brief && <TodayBrief state={state} today={today} onClose={() => setBrief(false)} />}
+      {confirms.length > 0 && !brief && !editor && (() => {
+        // 聞きたい予定が複数あっても、1つの画面にまとめて出す（次々に出ないように）
+        const items = confirms.map(c => ({ c, t: state.tasks.find(x => x.id === c.taskId) })).filter(x => x.t);
+        if (!items.length) { setTimeout(() => setConfirms([]), 0); return null; }
+        const answer = async (list: typeof items, action: 'done' | 'later' | 'hold') => {
+          const keys = new Set(list.map(x => x.c.taskId + '|' + x.c.day));
+          setConfirms(xs => xs.filter(x => !keys.has(x.taskId + '|' + x.day)));
+          await Promise.all(list.map(({ c, t }) => action === 'done'
+            ? api(`tasks/${t!.id}/done`, 'POST', { day: c.day, done: true }).catch(() => {})
+            : api(`tasks/${t!.id}/followup`, 'POST', { day: c.day, action }).catch(() => {})));
+          notify(action === 'done' ? '完了！おつかれさまです 🎉' : action === 'later' ? '15分後にもう一度聞きます' : '保留にしました');
+          load();
+        };
+        return (
+          <div className="banner" role="alertdialog" aria-label="完了しましたか？">
+            <div className="banner-card confirm-card">
+              <div className="big"><Icon name="check" size={40} stroke={2.6} /></div>
+              <h2>完了しましたか？</h2>
+              <div className="muted small">終わる時間を30分過ぎた予定です</div>
+              <div className="confirm-list">
+                {items.map(x => (
+                  <div key={x.c.taskId + x.c.day} className="confirm-row">
+                    <div className="confirm-title">{x.t!.starred && <span className="star-mark">★</span>}{x.t!.title}<span>{x.t!.time}〜</span></div>
+                    <div className="confirm-btns">
+                      <button className="btn primary small" onClick={() => answer([x], 'done')}>完了</button>
+                      <button className="btn small" onClick={() => answer([x], 'later')}>まだ</button>
+                      <button className="btn small" onClick={() => answer([x], 'hold')}>保留</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {items.length > 1 && <button className="btn block" style={{ marginTop: 10 }} onClick={() => answer(items, 'later')}>全部まだ（15分後にもう一度）</button>}
+              <div className="small muted" style={{ marginTop: 8 }}>まだ：15分後にもう一度聞きます　保留：もう聞きません</div>
+            </div>
+          </div>
+        );
+      })()}
       {fullList && <FullChecklist list={state.checklists.find(c => c.id === fullList.id) || fullList} onClose={() => setFullList(null)} reload={load} />}
 
       {/* ---------- 付箋 ---------- */}
@@ -498,7 +574,7 @@ export default function App() {
             <div className="big"><Emoji char={banner.icon} size={46} /></div>
             <h2>{banner.title}</h2>
             <div className="muted">{banner.body}</div>
-            <button className="btn primary block" style={{ marginTop: 18 }} onClick={() => { setBanner(null); if (banner.icon === '📋') setPanel('drafts'); }}>
+            <button className="btn primary block" style={{ marginTop: 18 }} onClick={() => { setBanner(null); if (banner.icon === '📋') setMemoBoard(true); }}>
               {banner.icon === '📋' ? '詳細を入力する' : 'OK'}
             </button>
           </div>

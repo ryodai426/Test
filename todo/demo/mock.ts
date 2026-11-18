@@ -25,7 +25,7 @@ const groups: Any[] = [
 function task(p: Any): Any {
   return {
     id: id(), user_id: 'me', group_id: 'gp', status: 'ready', title: '', description: '', kind: 'general', color: null,
-    kind_id: null, assignees: null, date: null, time: null, duration_min: 60, reminders: KIND_PRESETS[p.kind || 'general'].reminders, remind_all: false, repeat: null,
+    kind_id: null, assignees: null, starred: false, date: null, time: null, duration_min: 60, reminders: KIND_PRESETS[p.kind || 'general'].reminders, remind_all: false, repeat: null,
     captured_at: ago(60 * 24), detailed_at: ago(60 * 24), done_at: null, done_by: null, updated_at: ago(60), ...p,
   };
 }
@@ -41,7 +41,7 @@ const duty = task({ group_id: 'gw', assignees: ['me'], title: '朝当番', kind:
 
 const tasks: Any[] = [
   duty, report, review, shop1, shop2,
-  task({ group_id: 'gw', title: '定例会議', kind: 'meeting', date: mon, time: '10:00', description: '営業部との定例', repeat: { freq: 'weekly', interval: 1, weekdays: [1, 3], monthMode: 'day', until: null } }),
+  task({ group_id: 'gw', starred: true, title: '定例会議', kind: 'meeting', date: mon, time: '10:00', description: '営業部との定例', repeat: { freq: 'weekly', interval: 1, weekdays: [1, 3], monthMode: 'day', until: null } }),
   task({ group_id: 'gf', user_id: 'u4', title: 'ゴミ出し', kind: 'duty', date: mon, time: '07:30', duration_min: 15, remind_all: true, repeat: { freq: 'weekly', interval: 1, weekdays: [2, 5], monthMode: 'day', until: null } }),
   task({ title: '歯医者', kind: 'reminder', date: addDays(T, 1), time: '18:30' }),
   task({ title: 'ランニング', date: addDays(T, 2), time: '06:30', duration_min: 45, color: '#EBC1FF' }),
@@ -52,8 +52,11 @@ const tasks: Any[] = [
   task({ group_id: 'gf', title: '週末キャンプ（道志）', date: sat, color: '#8ED462', description: '10時に出発' }),
   task({ title: 'ランタンの電池を買う' }),
   task({ title: 'キャンプ場の予約を確認' }),
-  task({ status: 'draft', title: '田中さんに電話', captured_at: ago(25), detailed_at: null, reminders: [] }),
-  task({ status: 'draft', title: '', captured_at: ago(140), detailed_at: null, reminders: [] }),
+  task({ status: 'draft', title: '田中さんに電話', description: '見積もりの件。金曜までに折り返し', captured_at: ago(25), detailed_at: null, reminders: [] }),
+  task({ status: 'draft', title: 'テントのペグを買い足す', description: '鍛造ペグ 8本\nハンマーも見る', captured_at: ago(60 * 5), detailed_at: null, reminders: [] }),
+  task({ status: 'draft', title: '会議で出たアイデア', description: '朝礼を5分短くする', captured_at: ago(60 * 26), detailed_at: null, reminders: [] }),
+  // 終わってから30分以上たったのに、まだ完了していない予定（「完了しましたか？」が出る）
+  task({ title: '週報の下書き', date: T, time: hh(H - 2), duration_min: 60 }),
 ];
 // 過去の分の完了
 const done: Any[] = [];
@@ -112,7 +115,8 @@ function pick(b: Any, keys: string[]) {
 }
 const assigneesFrom = (groupId: string, raw: unknown) =>
   groupId === 'gp' || raw === 'all' || raw === null ? null : Array.isArray(raw) && raw.length ? raw : ['me'];
-const TASK_KEYS = ['title', 'description', 'kind', 'kind_id', 'color', 'date', 'time', 'duration_min', 'reminders', 'remind_all', 'repeat', 'group_id'];
+const followups: Any[] = [];
+const TASK_KEYS = ['title', 'description', 'kind', 'kind_id', 'starred', 'color', 'date', 'time', 'duration_min', 'reminders', 'remind_all', 'repeat', 'group_id'];
 
 function state(day: string | null) {
   if (!loggedIn) return { me: null };
@@ -128,6 +132,7 @@ function state(day: string | null) {
     done: done.filter(x => ids.has(x.task_id)).map(x => ({ ...x })),
     items: items.filter(i => ids.has(i.task_id)).sort((a, b) => a.position - b.position).map(i => ({ ...i })),
     reactions: reactions.filter(r => ids.has(r.task_id)),
+    followups: followups.filter(f => ids.has(f.task_id)),
     kinds: kinds.filter(k => gids.has(k.group_id)),
     checklists: checklists.map(c => ({ ...c, items: c.items.map((i: Any) => ({ ...i, checked: checks.has(i.id + '|' + d) })) })),
     notifications: notifications.filter(n => n.user_id === 'me').sort((a, b) => b.id - a.id).map(n => ({ ...n, actor: n.actor_id ? users[n.actor_id] : null })),
@@ -150,7 +155,7 @@ async function handle(path: string, method: string, b: Any): Promise<any> {
   if (p === 'me') return { ok: true };
 
   if (p === 'tasks' && M === 'POST') {
-    if (b.quick) { const t = task({ status: 'draft', title: (b.title || '').slice(0, 120), captured_at: new Date().toISOString(), detailed_at: null, reminders: [] }); tasks.push(t); return { id: t.id }; }
+    if (b.quick) { const t = task({ status: 'draft', title: (b.title || '').slice(0, 120), description: String(b.description || ''), captured_at: new Date().toISOString(), detailed_at: null, reminders: [] }); tasks.push(t); return { id: t.id }; }
     if (!b.title?.trim()) fail('タイトルを入力してください');
     const gid = b.group_id || 'gp';
     const t = task({ ...pick(b, TASK_KEYS), group_id: gid, assignees: assigneesFrom(gid, 'assignees' in b ? b.assignees : ['me']), detailed_at: new Date().toISOString(), captured_at: new Date().toISOString() });
@@ -238,6 +243,16 @@ async function handle(path: string, method: string, b: Any): Promise<any> {
   }
   if (p === 'notifications/read') {
     for (const n of notifications) if (!b.ids || b.ids.includes(n.id)) n.read_at = n.read_at || new Date().toISOString();
+    return { ok: true };
+  }
+  if (seg[0] === 'tasks' && seg[2] === 'followup') {
+    const t = findTask(seg[1]);
+    const day = b.day || today();
+    const i = followups.findIndex(f => f.task_id === t.id && f.occ_date === day);
+    const cur = i >= 0 ? followups[i] : null;
+    if (i >= 0) followups.splice(i, 1);
+    if (b.action === 'later') followups.push({ task_id: t.id, occ_date: day, state: 'snoozed', snooze_count: (cur?.snooze_count || 0) + 1, next_at: new Date(Date.now() + 15 * 60000).toISOString() });
+    if (b.action === 'hold') followups.push({ task_id: t.id, occ_date: day, state: 'held', snooze_count: cur?.snooze_count || 0, next_at: null });
     return { ok: true };
   }
   if (p.startsWith('push/')) return { ok: true, sent: 0 };
