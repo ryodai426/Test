@@ -17,9 +17,9 @@ const sat = addDays(mon, 5);
 
 const users: Any = { me: 'りょう', u2: '鈴木花子', u3: '佐藤次郎', u4: '母' };
 const groups: Any[] = [
-  { id: 'gp', name: '個人（自分専用）', description: '', color: '#E0A526', is_personal: true, owner_id: 'me', notify_create: false, notify_done: false, invite_token: null, m: ['me'] },
-  { id: 'gf', name: '家族', description: '', color: '#D9683A', is_personal: false, owner_id: 'u4', notify_create: true, notify_done: true, invite_token: 'demo-family', m: ['me', 'u4'] },
-  { id: 'gw', name: '営業チーム', description: '', color: '#3A7CA5', is_personal: false, owner_id: 'u2', notify_create: true, notify_done: true, invite_token: 'demo-sales', m: ['me', 'u2', 'u3'] },
+  { id: 'gp', name: '個人（自分専用）', description: '', color: '#E8C21E', is_personal: true, owner_id: 'me', notify_create: false, notify_done: false, invite_token: null, m: ['me'] },
+  { id: 'gf', name: '家族', description: '', color: '#FF7461', is_personal: false, owner_id: 'u4', notify_create: true, notify_done: true, invite_token: 'demo-family', m: ['me', 'u4'] },
+  { id: 'gw', name: '営業チーム', description: '', color: '#2E9BFF', is_personal: false, owner_id: 'u2', notify_create: true, notify_done: true, invite_token: 'demo-sales', m: ['me', 'u2', 'u3'] },
 ];
 
 function task(p: Any): Any {
@@ -41,9 +41,9 @@ const tasks: Any[] = [
   task({ group_id: 'gw', title: '定例会議', kind: 'meeting', date: mon, time: '10:00', description: '営業部との定例', repeat: { freq: 'weekly', interval: 1, weekdays: [1, 3], monthMode: 'day', until: null } }),
   task({ group_id: 'gf', user_id: 'u4', title: 'ゴミ出し', kind: 'duty', date: mon, time: '07:30', duration_min: 15, remind_all: true, repeat: { freq: 'weekly', interval: 1, weekdays: [2, 5], monthMode: 'day', until: null } }),
   task({ title: '歯医者', kind: 'reminder', date: addDays(T, 1), time: '18:30' }),
-  task({ title: 'ランニング', date: addDays(T, 2), time: '06:30', duration_min: 45, color: '#7E9A3A' }),
+  task({ title: 'ランニング', date: addDays(T, 2), time: '06:30', duration_min: 45, color: '#22B0A0' }),
   task({ group_id: 'gw', user_id: 'u2', title: '見積書を送る', date: addDays(T, 1), time: '11:00', duration_min: 30 }),
-  task({ group_id: 'gf', title: '週末キャンプ（道志）', date: sat, color: '#2F7A55', description: '10時に出発' }),
+  task({ group_id: 'gf', title: '週末キャンプ（道志）', date: sat, color: '#5DB33C', description: '10時に出発' }),
   task({ title: 'ランタンの電池を買う' }),
   task({ title: 'キャンプ場の予約を確認' }),
   task({ status: 'draft', title: '田中さんに電話', captured_at: ago(25), detailed_at: null, reminders: [] }),
@@ -183,7 +183,7 @@ async function handle(path: string, method: string, b: Any): Promise<any> {
   }
   if (p === 'groups' && M === 'POST') {
     if (!b.name?.trim()) fail('グループ名を入力してください');
-    const g = { id: id(), name: b.name.trim(), description: '', color: b.color || '#3A7CA5', is_personal: false, owner_id: 'me', notify_create: true, notify_done: true, invite_token: 'demo-' + seq, m: ['me'] };
+    const g = { id: id(), name: b.name.trim(), description: '', color: b.color || '#2E9BFF', is_personal: false, owner_id: 'me', notify_create: true, notify_done: true, invite_token: 'demo-' + seq, m: ['me'] };
     groups.push(g);
     return { id: g.id };
   }

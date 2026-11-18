@@ -90,5 +90,5 @@ export function occurrences(s: State, day: string, groupFilter: string): Occ[] {
     .sort((a, b) => (a.task.time || '').localeCompare(b.task.time || ''));
 }
 
-// 森・湖・焚き火・夕日・木の実…アウトドアの色
-export const PALETTE = ['#2F7A55', '#3A7CA5', '#D9683A', '#E0A526', '#9C4F7A', '#7E9A3A', '#2A8C82', '#7A6A58'];
+// 草原・空・焚き火・太陽・花…明るいアウトドアの色
+export const PALETTE = ['#5DB33C', '#2E9BFF', '#FF7461', '#E8C21E', '#B47BE0', '#F28BB5', '#22B0A0', '#A0703F'];

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { addDays, DRAFT_STEPS, occursOn, reminderMessage, reminderTimes, KIND_PRESETS } from '@/lib/time';
 import { api, ApiError, isDemo, sw, localToday, occurrences, type Checklist, type Occ, type State, type Task } from './lib';
 import Login from './components/Login';
-import Icon, { Logo } from './components/Icon';
+import Icon, { Logo, Scene } from './components/Icon';
 import { DayView, MonthView, WeekView, periodLabel } from './components/Calendar';
 import TaskEditor, { type EditorInit } from './components/TaskEditor';
 import {
@@ -296,12 +296,12 @@ export default function App() {
       <aside className="sidebar">
         <div className="brand"><Logo size={34} /><div><b>わすれないTODO</b><small>{isDemo() ? 'Trail Notes · Demo' : 'Trail Notes'}</small></div></div>
         <div className="capture-box">
-          <label className="cap-label" htmlFor="side-capture">Quick memo</label>
-          <input id="side-capture" ref={sideCaptureRef} type="text" placeholder="思いついたら、ひとことだけ" value={capture} onChange={e => setCapture(e.target.value)}
+          <label className="cap-label" htmlFor="side-capture">思いついたら、すぐメモ</label>
+          <input id="side-capture" ref={sideCaptureRef} type="text" placeholder="ひとことだけでOK" value={capture} onChange={e => setCapture(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); saveCapture(capture.trim(), true); } if (e.key === 'Escape') (e.target as HTMLInputElement).blur(); }} />
           <div className="hint"><kbd>Enter</kbd> で未記入メモに保存（空でもOK）・<kbd>N</kbd> でここへ</div>
         </div>
-        <button className="btn sun block" onClick={() => setEditor({ day: cursor, groupId: groupFilter !== 'all' ? groupFilter : undefined })}><Icon name="plus" size={18} stroke={2.4} />予定・タスクを追加</button>
+        <button className="btn primary block big" onClick={() => setEditor({ day: cursor, groupId: groupFilter !== 'all' ? groupFilter : undefined })}>予定・タスクを追加<span className="orb"><Icon name="plus" size={20} stroke={2.4} /></span></button>
         <div style={{ height: 8 }} />
         <button className="side-link" onClick={() => setPanel('drafts')}><Icon name="memo" size={19} />未記入のメモ {drafts.length > 0 && <span className="count alert">{drafts.length}</span>}</button>
         <button className="side-link" onClick={() => setPanel('shopping')}><Icon name="cart" size={19} />買い物リスト <span className="count">{shoppingOpen.length || ''}</span></button>
@@ -329,17 +329,18 @@ export default function App() {
         <div className="side-section">{me.name} さん</div>
         {currentGroup && <button className="side-link" onClick={() => setPanel('members')}><Icon name="users" size={19} />メンバー・共有設定</button>}
         <button className="side-link" onClick={() => setPanel('settings')}><Icon name="gear" size={19} />設定・他の端末で使う</button>
+        <Scene />
       </aside>
 
       {/* ---------- メイン ---------- */}
       <main className="main">
         <div className="head">
         <div className="topbar">
-          <button className="icon-btn only-mobile" onClick={() => setPanel('groups')} aria-label="グループ切り替え"><Icon name="menu" /></button>
-          <div className="title">{groupTitle}</div>
+          <div className="title"><span className="only-mobile" style={{ display: 'inline-flex' }}><Logo size={30} /></span>{groupTitle}</div>
           <button className="icon-btn only-mobile" onClick={() => setPanel('notices')} aria-label="お知らせ"><Icon name="bell" />{unread > 0 && <span className="badge">{unread}</span>}</button>
           <button className="icon-btn" onClick={() => (currentGroup ? setPanel('members') : setPanel('groups'))} aria-label="メンバー"><Icon name="users" /></button>
           <button className="icon-btn only-mobile" onClick={() => setPanel('settings')} aria-label="設定"><Icon name="gear" /></button>
+          <button className="icon-btn green only-mobile" onClick={() => setPanel('groups')} aria-label="グループ切り替え"><Icon name="menu" stroke={2.4} /></button>
         </div>
         <div className="toolbar">
           <div className="seg">
@@ -348,7 +349,7 @@ export default function App() {
             ))}
           </div>
           <span className="period grow">{periodLabel(view, cursor)}
-            {view === 'day' && todayList.length > 0 && <span className="small" style={{ fontWeight: 500, marginLeft: 10, opacity: .7, letterSpacing: '.06em' }}>{todayList.filter(o => o.done).length}/{todayList.length} 完了</span>}
+            {view === 'day' && todayList.length > 0 && <span className="small only-pc" style={{ fontWeight: 500, marginLeft: 10, opacity: .7, letterSpacing: '.06em' }}>{todayList.filter(o => o.done).length}/{todayList.length} 完了</span>}
           </span>
           <button className="icon-btn" onClick={() => move(-1)} aria-label="前へ"><Icon name="left" size={20} /></button>
           <button className="btn small" onClick={() => setCursor(localToday())}>今日</button>
@@ -378,7 +379,7 @@ export default function App() {
         <nav className="bottombar">
           <button onClick={() => setPanel('drafts')}><span className="i"><Icon name="memo" /></span>未記入{drafts.length > 0 && <span className="badge">{drafts.length}</span>}</button>
           <button onClick={() => setPanel('shopping')}><span className="i"><Icon name="cart" /></span>買い物</button>
-          <button className="capture-btn" onClick={openCapture} aria-label="ひとことメモ"><span className="i"><Icon name="plus" size={28} stroke={2.4} /></span>メモ</button>
+          <button className="capture-btn" onClick={openCapture} aria-label="ひとことメモ"><span className="i"><Icon name="plus" size={28} stroke={2.6} /></span>メモ</button>
           <button onClick={() => setPanel('checklists')}><span className="i"><Icon name="pack" /></span>持ち物</button>
           <button onClick={() => setEditor({ day: cursor, groupId: groupFilter !== 'all' ? groupFilter : undefined })}><span className="i"><Icon name="calendar" /></span>予定</button>
         </nav>
@@ -387,7 +388,7 @@ export default function App() {
       {/* ---------- ワンボタンメモ（スマホ）：常に置いておき、タップで即キーボード ---------- */}
       {captureOpen && <div className="capture-backdrop" onClick={() => { setCaptureOpen(false); captureRef.current?.blur(); }} />}
       <div className={'capture-sheet only-mobile' + (captureOpen ? ' open' : '')} aria-hidden={!captureOpen}>
-        <div className="small muted" style={{ marginBottom: 8 }}>忘れる前に、ひとことだけ（空でもOK）</div>
+        <div className="cap-title">忘れる前に、ひとことだけ</div>
         <input ref={captureRef} type="text" placeholder="例：小麦粉、田中さんに電話" value={capture} onChange={e => setCapture(e.target.value)} enterKeyHint="done"
           onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); saveCapture(capture.trim()); } }} />
         <div className="row" style={{ marginTop: 10 }}>

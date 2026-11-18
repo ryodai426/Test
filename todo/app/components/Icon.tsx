@@ -26,13 +26,54 @@ export default function Icon({ name, size = 22, stroke = 1.8 }: { name: keyof ty
   );
 }
 
-/** ロゴ：山と、てっぺんの旗（=忘れないための目印） */
-export function Logo({ size = 28 }: { size?: number }) {
+/** ロゴ：緑の丸に、山と太陽（線画） */
+export function Logo({ size = 34 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" style={{ flex: 'none' }}>
-      <rect width="32" height="32" rx="9" style={{ fill: 'var(--sun)' }} />
-      <path d="M4 25l8.5-12 4.5 6 3.5-4.5L28 25z" style={{ fill: 'var(--forest)' }} />
-      <path d="M20.5 14.5V6.5l5 2.2-5 2.2" fill="none" style={{ stroke: 'var(--forest)' }} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" />
+    <svg width={size} height={size} viewBox="0 0 40 40" aria-hidden="true" style={{ flex: 'none' }}>
+      <circle cx="20" cy="20" r="20" style={{ fill: 'var(--green)' }} />
+      <circle cx="27" cy="13" r="4.2" style={{ fill: 'var(--yellow)', stroke: 'var(--ink)' }} strokeWidth="1.8" />
+      <path d="M6.5 29 15 16.5l5 7 3.5-4.5L33.5 29z" style={{ fill: '#fff', stroke: 'var(--ink)' }} strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M12.6 20l2.4 2 2-1.6" fill="none" style={{ stroke: 'var(--ink)' }} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** 丘・雲・太陽・テント・木の絵。onGreen は緑の面の上で使うとき */
+export function Scene({ onGreen = false, className = 'scene' }: { onGreen?: boolean; className?: string }) {
+  const ink = { stroke: 'var(--ink)', strokeWidth: 2, strokeLinejoin: 'round' as const, strokeLinecap: 'round' as const };
+  const back = onGreen ? '#B8E58F' : '#DDF1C8';
+  const front = onGreen ? 'var(--cream)' : 'var(--green)';
+  const cloud = (x: number, y: number, k = 1) => (
+    <g transform={`translate(${x} ${y}) scale(${k})`} style={{ fill: '#fff' }}>
+      <circle cx="0" cy="10" r="14" /><circle cx="18" cy="2" r="18" /><circle cx="40" cy="8" r="15" /><rect x="-14" y="10" width="70" height="14" rx="7" />
+    </g>
+  );
+  const tree = (x: number, y: number, k = 1) => (
+    <g transform={`translate(${x} ${y}) scale(${k})`}>
+      <path d="M0 0v12" {...ink} fill="none" />
+      <path d="M-14 2 0-30 14 2z" style={{ fill: onGreen ? 'var(--green)' : '#5DB33C' }} {...ink} />
+      <path d="M-5-10l5 4 5-4" fill="none" {...ink} strokeWidth={1.6} />
+    </g>
+  );
+  return (
+    <svg className={className} viewBox="0 0 600 220" preserveAspectRatio="xMidYMax meet" aria-hidden="true" style={{ overflow: 'visible' }}>
+      <circle cx="478" cy="62" r="28" style={{ fill: 'var(--yellow)' }} {...ink} />
+      {cloud(92, 40)}
+      {cloud(360, 70, .8)}
+      <path d="M-2400 140H0C110 92 230 104 330 138S520 104 600 116H3000V220H-2400z" style={{ fill: back }} />
+      <path d="M-2400 176H0C110 150 210 158 310 174S500 146 600 160H3000V220H-2400z" style={{ fill: front }} />
+      <g>
+        <path d="M150 174 203 104l53 70z" style={{ fill: 'var(--coral)' }} {...ink} />
+        <path d="M203 130l-14 44h28z" style={{ fill: 'var(--lilac)' }} {...ink} />
+        <path d="M203 104V84" {...ink} fill="none" />
+        <path d="M203 84l18 6-18 6z" style={{ fill: 'var(--yellow)' }} {...ink} />
+      </g>
+      {tree(300, 168, 1)}
+      {tree(330, 172, .8)}
+      {tree(540, 158, 1.1)}
+      <path d="M262 52q6-6 12 0q6-6 12 0M300 34q5-5 10 0q5-5 10 0" fill="none" {...ink} strokeWidth={1.8} />
+      <g style={{ fill: 'var(--sky)' }}><circle cx="96" cy="190" r="4" /><circle cx="440" cy="196" r="4" /></g>
+      <g style={{ fill: 'var(--yellow)' }}><circle cx="120" cy="200" r="4" /><circle cx="470" cy="186" r="4" /></g>
     </svg>
   );
 }

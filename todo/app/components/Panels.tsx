@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { WEEK_LABELS } from '@/lib/time';
-import Icon from './Icon';
+import Icon, { Scene } from './Icon';
 import { sw, api, fmtJpDate, hhmm, localDateOf, localToday, PALETTE, type Checklist, type Group, type State, type Task } from '../lib';
 
 function Sheet({ title, icon, onClose, children, foot, side = true }: { title: string; icon?: string; onClose: () => void; children: React.ReactNode; foot?: React.ReactNode; side?: boolean }) {
@@ -161,23 +161,26 @@ export function FullChecklist({ list, onClose, reload }: { list: Checklist; onCl
   return (
     <div className="fullcheck">
       <div className="row">
-        <div className="grow eyebrow">Before you go</div>
+        <div className="grow eyebrow">出発前のチェック</div>
         <button className="icon-btn" onClick={onClose} aria-label="閉じる"><Icon name="close" /></button>
       </div>
       <h2>{list.name}</h2>
       <div className="sub">指差し確認しながらタップ</div>
-      <div className="progress">{items.filter(i => i.checked).length} / {items.length}</div>
+      <div className="progress"><span>{items.filter(i => i.checked).length} / {items.length}</span></div>
       <div className="items">
         {items.map(i => (
           <button key={i.id} className={'it' + (i.checked ? ' on' : '')} onClick={() => flip(i.id)}>
             <span className={'box' + (i.checked ? ' on' : '')}>{i.checked ? '✓' : ''}</span>{i.label}
           </button>
         ))}
-        {items.length === 0 && <div className="empty" style={{ color: 'rgba(255,255,255,.7)' }}>項目がありません。「持ち物」から追加できます。</div>}
+        {items.length === 0 && <div className="empty" style={{ color: 'var(--ink)' }}>項目がありません。「持ち物」から追加できます。</div>}
       </div>
-      <button className="btn primary block" style={{ maxWidth: 520, alignSelf: 'center' }} onClick={onClose}>
-        {all ? '全部OK！ いってらっしゃい' : 'とじる'}
-      </button>
+      <div className="foot">
+        <button className="btn white block big" onClick={onClose}>
+          {all ? '全部OK！ いってらっしゃい' : 'とじる'}<span className="orb"><Icon name={all ? 'right' : 'close'} size={18} stroke={2.4} /></span>
+        </button>
+      </div>
+      <Scene onGreen />
     </div>
   );
 }
@@ -388,8 +391,12 @@ function urlB64ToUint8Array(base64: string) {
 export async function currentPushSub(): Promise<PushSubscription | null> {
   const c = sw();
   if (!c || !('PushManager' in window)) return null;
-  const reg = await c.getRegistration();
-  return (await reg?.pushManager.getSubscription()) || null;
+  try {
+    const reg = await c.getRegistration();
+    return (await reg?.pushManager.getSubscription()) || null;
+  } catch {
+    return null; // 埋め込み表示など、Service Worker が使えない場所
+  }
 }
 
 export function SettingsPanel({ state, onClose, notify }: { state: State; onClose: () => void; notify: (m: string) => void }) {
