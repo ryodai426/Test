@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
+import { clearNextAt, kvName } from '@/lib/kv';
 import { q, one, tx, databaseUrl, pool, ready } from '@/lib/db';
 import { consumeLinkCode, createSession, currentUser, destroySession, issueLinkCode, sessionTokenHash, touchSession, type User } from '@/lib/auth';
 import { loadState } from '@/lib/state';
@@ -602,6 +603,7 @@ route('GET', 'health', async () => {
     'プッシュ通知の鍵': vapidProblem() || 'OK',
     '通知の送り元（VAPID_SUBJECT）': process.env.VAPID_SUBJECT ? `OK（${vapid().subject}）` : '未設定（なくても動きます）',
     '時間どおりの通知の合言葉（CRON_SECRET）': process.env.CRON_SECRET ? 'OK' : '未設定（なくても動きます）',
+    '通知の時刻の保存場所（Upstash Redis）': kvName() ? `OK（${kvName()}）` : '未設定：Vercel の Storage で Upstash Redis を追加すると、通知の呼び出しでデータベースを起こさずに済みます（Neon の無料枠の節約）',
   };
   if (db) {
     try {
@@ -634,7 +636,7 @@ route('GET', 'cron', async ({ req, url }) => {
   const secret = process.env.CRON_SECRET;
   const given = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') || url.searchParams.get('key');
   if (!secret || given !== secret) throw new HttpError(401, 'unauthorized');
-  return runDueReminders();
+  return runDueReminders(Date.now(), url.searchParams.get('force') === '1');
 });
 
 // ---------------------------------------------------------------- 入口
@@ -652,6 +654,8 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
     if (!m) continue;
     try {
       const res = await h({ req, body, params: m.slice(1).map(decodeURIComponent), url });
+      // 予定・メモ・リストなどを書き換えたら、次に通知を送る時刻を計算し直させる（返事を待たせないよう、返したあとで）
+      if (req.method !== 'GET' && path !== 'cron') after(() => clearNextAt());
       return NextResponse.json(res ?? { ok: true }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (e: any) {
       if (e instanceof HttpError) return NextResponse.json({ error: e.message }, { status: e.status });
