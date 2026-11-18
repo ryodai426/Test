@@ -1,5 +1,6 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { confirmDelete } from '../confirm';
 import { addDays, daysBetween, KIND_PRESETS, REMINDER_CHOICES, REMINDER_LABELS, WEEK_LABELS, weekday, type Repeat } from '@/lib/time';
 import Icon from './Icon';
 import Emoji from './Emoji';
@@ -159,12 +160,28 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
   async function remove(scope?: Scope) {
     if (!t) return;
     if (isRepeat && !scope) { setAskScope('delete'); return; }
-    if (!isRepeat && !confirm(isDraft ? 'このメモを削除しますか？' : `「${t.title || 'タスク'}」を削除しますか？`)) return;
+    if (!isRepeat && !(await confirmDelete(isDraft ? 'このメモを削除しますか？' : `「${t.title || 'タスク'}」を削除しますか？`, 'task'))) return;
     onSaved('削除しました');
     if (isRepeat && scope && scope !== 'all') act(P.splitTask(t.id, openedDay, scope, null), () => api(`tasks/${t.id}/split`, 'POST', { day: openedDay, scope, delete: true }));
     else act(P.removeTask(t.id), () => api(`tasks/${t.id}`, 'DELETE'));
   }
 
+
+  // キーボード：Esc で閉じる、Enter で保存（詳細の欄の中では改行。日本語の変換中は何もしない）
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (askScope) { if (e.key === 'Escape') { e.preventDefault(); setAskScope(null); } return; }
+      const el = e.target as HTMLElement;
+      if (e.key === 'Escape') { e.preventDefault(); onClose(); return; }
+      if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229 || e.shiftKey || e.defaultPrevented) return;
+      if (['TEXTAREA', 'BUTTON', 'SELECT', 'A'].includes(el.tagName)) return;
+      if (el.tagName === 'INPUT' && (el as HTMLInputElement).type === 'checkbox') return;
+      e.preventDefault();
+      save();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   async function addItem() {
     const labels = itemText.split(/[、,\n]/).map(s => s.trim()).filter(Boolean);

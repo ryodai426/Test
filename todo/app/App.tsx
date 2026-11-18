@@ -12,6 +12,7 @@ import { Review, ReviewPrompt } from './components/Review';
 import MemoBoard from './components/MemoBoard';
 import { DayView, MonthView, WeekView, periodLabel } from './components/Calendar';
 import TaskEditor, { type EditorInit } from './components/TaskEditor';
+import { ConfirmHost } from './confirm';
 import {
   ChecklistPanel, FullChecklist, GroupDrawer, MembersPanel, NoticePanel, SettingsPanel, checklistDue,
 } from './components/Panels';
@@ -561,7 +562,7 @@ export default function App() {
         <input ref={captureRef} type="text" placeholder="例：小麦粉、田中さんに電話" value={capture} onChange={e => setCapture(e.target.value)} enterKeyHint="done"
           onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); saveCapture(capture.trim()); } }} />
         <div className="row" style={{ marginTop: 10 }}>
-          <button className="btn" onClick={() => { const t = capture.trim(); setCaptureOpen(false); setCapture(''); setEditor({ day: cursor, title: t }); }}>いま詳しく書く</button>
+          <button className="btn" onClick={() => { const t = capture.trim(); setCaptureOpen(false); setCapture(''); setEditor({ day: cursor, title: t, groupId: groupFilter !== 'all' ? groupFilter : undefined }); }}>いま詳しく書く</button>
           <div className="grow" />
           <button className="btn primary" onClick={() => saveCapture(capture.trim())}>とりあえず保存</button>
         </div>
@@ -678,6 +679,7 @@ export default function App() {
         </div>
       )}
 
+      <ConfirmHost />
       {toast && <div className="toast"><EmojiText text={toast} /></div>}
     </div>
   );

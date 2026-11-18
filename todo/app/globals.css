@@ -556,3 +556,4 @@ b, strong { font-weight: var(--w-head); }
   .sheet-wide textarea { min-height: 0; }
   .sheet-wide .sheet-head { padding-bottom: 4px; }
 }
+.banner.confirm-delete { z-index: 95; }
