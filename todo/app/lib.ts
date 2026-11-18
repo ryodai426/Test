@@ -8,7 +8,7 @@ export type Group = {
 };
 export type Task = {
   id: string; user_id: string; group_id: string; status: 'draft' | 'ready'; title: string; description: string;
-  kind: string; kind_id: string | null; assignees: string[] | null; starred: boolean; color: string | null; date: string | null; time: string | null; duration_min: number;
+  kind: string; kind_id: string | null; assignees: string[] | null; starred: boolean; color: string | null; date: string | null; end_date?: string | null; time: string | null; duration_min: number;
   reminders: string[]; remind_all: boolean; repeat: Repeat | null; captured_at: string; detailed_at: string | null;
   done_at: string | null; done_by: string | null; updated_at: string;
 };

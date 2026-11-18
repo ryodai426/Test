@@ -89,6 +89,8 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignees uuid[];
 ALTER TABLE users ADD COLUMN IF NOT EXISTS review_skip boolean NOT NULL DEFAULT false;
 -- 星マーク（重要）。月表示などで、時間の長さより優先して出す
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS starred boolean NOT NULL DEFAULT false;
+-- 複数日の予定の最後の日（出張など）。NULL ならその日だけ
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS end_date date;
 
 -- 「完了しましたか？」への返事（その日の分ごと）。snoozed ＝ まだ（next_at にもう一度）、held ＝ 保留
 CREATE TABLE IF NOT EXISTS task_followups (

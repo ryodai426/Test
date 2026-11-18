@@ -233,7 +233,7 @@ export default function App() {
       const doneSet = new Set(s.done.map(d => d.task_id + '|' + d.occ_date));
       const myGroups = new Set(s.groups.map(g => g.id));
       for (const t of s.tasks) {
-        if (t.status !== 'ready' || !t.time || !t.reminders.length || !myGroups.has(t.group_id)) continue;
+        if (t.status !== 'ready' || !t.time || !myGroups.has(t.group_id)) continue;
         // 自分あての予定だけ（表示する人に選ばれている／共通なら作った人か「全員に通知」）
         if (!(t.assignees?.length ? t.assignees.includes(s.me!.id) : (t.user_id === s.me!.id || t.remind_all))) continue;
         for (const day of [td, addDays(td, 1)]) {

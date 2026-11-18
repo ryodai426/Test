@@ -125,7 +125,7 @@ export function draftTask(s: State, fields: Partial<Task>): Task {
   const now = new Date().toISOString();
   return {
     id: tmpId(), user_id: s.me!.id, group_id: s.groups.find(g => g.is_personal)!.id, status: 'ready', title: '', description: '',
-    kind: 'general', kind_id: null, assignees: null, starred: false, color: null, date: null, time: null, duration_min: 60,
+    kind: 'general', kind_id: null, assignees: null, starred: false, color: null, date: null, end_date: null, time: null, duration_min: 60,
     reminders: [], remind_all: false, repeat: null, captured_at: now, detailed_at: now, done_at: null, done_by: null, updated_at: now,
     ...fields,
   };

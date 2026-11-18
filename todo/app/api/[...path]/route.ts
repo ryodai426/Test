@@ -98,6 +98,8 @@ function cleanTask(b: any, partial: boolean) {
   if (has('kind')) out.kind = KINDS.includes(b.kind) ? b.kind : 'general';
   if (has('color')) out.color = b.color && COLORS.test(b.color) ? b.color : null;
   if (has('date')) out.date = b.date && DATE.test(b.date) ? b.date : null;
+  // 複数日の予定：始まりより後の日だけ。繰り返しとは一緒に使わない
+  if (has('end_date')) out.end_date = b.end_date && DATE.test(b.end_date) && out.date && b.end_date > (out.date as string) && !b.repeat ? b.end_date : null;
   if (has('time')) out.time = b.time && TIME.test(b.time) ? b.time : null;
   if (has('duration_min')) out.duration_min = Math.min(24 * 60, Math.max(5, Number(b.duration_min) || 60));
   if (has('reminders')) out.reminders = Array.isArray(b.reminders) ? [...new Set(b.reminders.map(String))].filter(r => REMINDERS.includes(r as string)) : [];
@@ -235,9 +237,9 @@ route('POST', 'tasks', async ({ body }) => {
   // 表示する人：指定がなければ「自分だけ」（共通にするときは 'all'）
   const assignees = await cleanAssignees(groupId, g.is_personal, 'assignees' in body ? body.assignees : [u.id], u.id);
   const t = await one<{ id: string }>(
-    `INSERT INTO tasks (user_id, group_id, status, title, description, kind, kind_id, assignees, color, date, time, duration_min, reminders, remind_all, repeat, starred, detailed_at)
-     VALUES ($1,$2,'ready',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, now()) RETURNING id`,
-    [u.id, groupId, f.title, f.description, kindId ? 'general' : f.kind, kindId, assignees, f.color, f.date, f.time, f.duration_min, f.reminders, f.remind_all, f.repeat, f.starred]);
+    `INSERT INTO tasks (user_id, group_id, status, title, description, kind, kind_id, assignees, color, date, end_date, time, duration_min, reminders, remind_all, repeat, starred, detailed_at)
+     VALUES ($1,$2,'ready',$3,$4,$5,$6,$7,$8,$9,$16,$10,$11,$12,$13,$14,$15, now()) RETURNING id`,
+    [u.id, groupId, f.title, f.description, kindId ? 'general' : f.kind, kindId, assignees, f.color, f.date, f.time, f.duration_min, f.reminders, f.remind_all, f.repeat, f.starred, f.end_date]);
   if (Array.isArray(body.items)) {
     for (const [i, label] of body.items.map((s: unknown) => str(s, 80)).filter(Boolean).entries()) {
       await q('INSERT INTO task_items (task_id, label, position) VALUES ($1,$2,$3)', [t!.id, label, i]);
