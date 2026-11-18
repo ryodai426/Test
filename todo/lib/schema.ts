@@ -87,9 +87,6 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS kind_id uuid REFERENCES task_kinds(id
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignees uuid[];
 -- 夕方の「今日の振り返り」を聞かない設定
 ALTER TABLE users ADD COLUMN IF NOT EXISTS review_skip boolean NOT NULL DEFAULT false;
--- 買い物の品目：誰がいつチェックしたか（家族で共有しているとき用）
-ALTER TABLE task_items ADD COLUMN IF NOT EXISTS checked_by uuid REFERENCES users(id) ON DELETE SET NULL;
-ALTER TABLE task_items ADD COLUMN IF NOT EXISTS checked_at timestamptz;
 -- 星マーク（重要）。月表示などで、時間の長さより優先して出す
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS starred boolean NOT NULL DEFAULT false;
 
@@ -121,6 +118,9 @@ CREATE TABLE IF NOT EXISTS task_items (
   checked   boolean NOT NULL DEFAULT false,
   position  integer NOT NULL DEFAULT 0
 );
+-- 品目を誰がいつチェックしたか（表を作ったあとに足す。空のデータベースでも作れるように）
+ALTER TABLE task_items ADD COLUMN IF NOT EXISTS checked_by uuid REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE task_items ADD COLUMN IF NOT EXISTS checked_at timestamptz;
 
 CREATE TABLE IF NOT EXISTS reactions (
   task_id    uuid NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,

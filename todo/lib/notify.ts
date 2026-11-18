@@ -1,4 +1,5 @@
 import { q } from './db';
+import { getNextAt, setNextAt } from './kv';
 import { DRAFT_STEPS, nowIn, occursOn, addDays, reminderMessage, reminderTimes, zonedToUtc, weekday, type Repeat } from './time';
 
 import { createECDH } from 'crypto';
@@ -87,152 +88,175 @@ async function claim(key: string): Promise<boolean> {
 }
 
 /**
- * 1分ごとに外部から呼ばれる想定。
- * 鳴らすべき時刻を過ぎて15分以内で、まだ送っていないリマインドを送る。
+ * 通知は「数分おき」にまとめて送る（今は10分おきの呼び出しを想定。リアルタイムである必要はない）。
+ * 呼び出しが遅れたり1回抜けたりしても送れるように、鳴らす時刻を過ぎて WINDOW 以内なら送る。
  */
-export async function runDueReminders(now = Date.now()): Promise<{ sent: number }> {
-  const windowStart = now - 15 * 60000;
-  let sent = 0;
+export const WINDOW = 30 * 60000;
+/** 次の時刻を計算するとき、どこまで先を見るか。これより先に何もなくても、この時刻にはデータベースを見直す */
+const LOOKAHEAD = 6 * 3600000;
 
-  // ① 時間が決まっているタスク（会議・当番など）
+/** これから鳴らす通知1件。at に鳴らし、送る直前にもう一度状態を確かめる（fire の中） */
+type Due = { at: number; key: string; fire: () => Promise<number> };
+
+/** 予定の時刻の「HH:MM」に分を足す（日をまたいだら null） */
+function addMinutes(time: string, add: number): string | null {
+  const [h, m] = time.split(':').map(Number);
+  const t = h * 60 + m + add;
+  if (t >= 24 * 60) return null;
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+}
+
+/** now の前後で鳴らす可能性のある通知を、すべて集める */
+async function collect(now: number): Promise<Due[]> {
+  const out: Due[] = [];
+  const from = now - WINDOW;
+  const to = now + LOOKAHEAD;
+  const near = (at: number) => at >= from && at <= to;
+
+  // ① 時間が決まっている予定のリマインド（会議・当番など）
   const tasks = await q<{
-    id: string; user_id: string; group_id: string; title: string; date: string; time: string;
+    id: string; user_id: string; group_id: string; title: string; date: string; time: string; duration_min: number; kind: string;
     repeat: Repeat | null; reminders: string[]; remind_all: boolean; tz: string; done_at: string | null; assignees: string[] | null;
   }>(
-    `SELECT t.id, t.user_id, t.group_id, t.title, to_char(t.date, 'YYYY-MM-DD') AS date, t.time, t.repeat, t.reminders,
-            t.remind_all, u.tz, t.done_at, t.assignees
+    `SELECT t.id, t.user_id, t.group_id, t.title, to_char(t.date, 'YYYY-MM-DD') AS date, t.time, t.duration_min, t.kind,
+            t.repeat, t.reminders, t.remind_all, u.tz, t.done_at, t.assignees
        FROM tasks t JOIN users u ON u.id = t.user_id
-      WHERE t.status = 'ready' AND t.time IS NOT NULL AND cardinality(t.reminders) > 0
+      WHERE t.status = 'ready' AND t.time IS NOT NULL AND t.done_at IS NULL
         AND (t.repeat IS NOT NULL OR t.date BETWEEN current_date - 2 AND current_date + 2)`);
+  const isDone = async (t: { id: string; repeat: Repeat | null }, day: string) =>
+    !!t.repeat && (await q('SELECT 1 FROM task_done WHERE task_id = $1 AND occ_date = $2', [t.id, day])).length > 0;
+
   for (const t of tasks) {
-    if (!t.repeat && t.done_at) continue;
     const today = nowIn(t.tz, new Date(now)).date;
-    for (const day of [today, addDays(today, 1)]) {
+    for (const day of [addDays(today, -1), today, addDays(today, 1)]) {
       if (!occursOn(t, day)) continue;
       for (const r of reminderTimes(t, day, t.tz)) {
-        if (r.at > now || r.at < windowStart) continue;
-        if (!(await claim(`task:${t.id}:${day}:${r.key}`))) continue;
-        const done = t.repeat ? await q('SELECT 1 FROM task_done WHERE task_id = $1 AND occ_date = $2', [t.id, day]) : [];
-        if (done.length) continue;
-        // 表示する人が決まっていればその人たちへ。共通なら、作った人（「全員に通知」なら全員）
-        const recipients = t.assignees?.length
-          ? t.assignees
-          : t.remind_all
-            ? (await q<{ user_id: string }>('SELECT user_id FROM memberships WHERE group_id = $1', [t.group_id])).map(m => m.user_id)
-            : [t.user_id];
-        const body = reminderMessage(t.title, r.key, t.time);
-        for (const uid of recipients) {
-          sent += await pushTo(uid, { title: '⏰ リマインド', body, url: `/?date=${day}`, tag: `task-${t.id}-${day}` });
-        }
+        if (!near(r.at)) continue;
+        out.push({
+          at: r.at, key: `task:${t.id}:${day}:${r.key}`,
+          fire: async () => {
+            if (await isDone(t, day)) return 0;
+            // 表示する人が決まっていればその人たちへ。共通なら、作った人（「全員に通知」なら全員）
+            const to = t.assignees?.length ? t.assignees
+              : t.remind_all ? (await q<{ user_id: string }>('SELECT user_id FROM memberships WHERE group_id = $1', [t.group_id])).map(m => m.user_id)
+              : [t.user_id];
+            let n = 0;
+            for (const uid of to) n += await pushTo(uid, { title: '⏰ リマインド', body: reminderMessage(t.title, r.key, t.time), url: `/?date=${day}`, tag: `task-${t.id}-${day}` });
+            return n;
+          },
+        });
       }
     }
   }
 
-  // ② 何も書かずに保存したメモだけ（2分→5分→10分）。ひとことでも書いてあれば、メモとして十分なので知らせない
-  const drafts = await q<{ id: string; user_id: string; title: string; captured_at: Date }>(
-    `SELECT id, user_id, title, captured_at FROM tasks
-      WHERE status = 'draft' AND title = '' AND description = '' AND captured_at > now() - interval '30 minutes'`);
-  for (const d of drafts) {
-    for (const step of DRAFT_STEPS) {
-      const at = new Date(d.captured_at).getTime() + step.min * 60000;
-      if (at > now || at < windowStart) continue;
-      if (!(await claim(`draft:${d.id}:${step.min}`))) continue;
-      sent += await pushTo(d.user_id, { title: '📋 未記入のメモ', body: step.text(d.title), url: `/?edit=${d.id}`, tag: `draft-${d.id}` });
+  // ② 終わる時間から30分たっても完了になっていない予定に「完了しましたか？」
+  //    聞く相手：表示する人／共通なら作った人。「まだ」なら15分後にもう一度、「保留」ならもう聞かない
+  const followups = await q<{ task_id: string; occ_date: string; state: string; snooze_count: number; next_at: Date | null }>(
+    `SELECT task_id, to_char(occ_date, 'YYYY-MM-DD') AS occ_date, state, snooze_count, next_at FROM task_followups WHERE occ_date >= current_date - 1`);
+  const fmap = new Map(followups.map(f => [f.task_id + '|' + f.occ_date, f]));
+  for (const t of tasks) {
+    if (t.kind === 'shopping') continue;
+    const today = nowIn(t.tz, new Date(now)).date;
+    for (const day of [addDays(today, -1), today]) {
+      if (!occursOn(t, day)) continue;
+      const end = addMinutes(t.time, Math.max(20, t.duration_min || 60));
+      if (!end) continue; // 日をまたぐ予定は対象外
+      const f = fmap.get(t.id + '|' + day);
+      if (f?.state === 'held') continue;
+      const first = zonedToUtc(day, end, t.tz) + 30 * 60000;
+      const at = f ? (f.next_at ? new Date(f.next_at).getTime() : 0) : first;
+      if (!at || !near(at)) continue;
+      out.push({
+        at, key: `confirm:${t.id}:${day}:${f?.snooze_count || 0}`,
+        fire: async () => {
+          if (await isDone(t, day)) return 0;
+          let n = 0;
+          for (const uid of t.assignees?.length ? t.assignees : [t.user_id]) {
+            n += await pushTo(uid, {
+              title: '✅ 完了しましたか？', body: `「${t.title}」（${t.time}〜）`,
+              url: `/?confirm=${t.id}&day=${day}`, tag: `confirm-${t.id}-${day}`, confirm: { taskId: t.id, day },
+            });
+          }
+          return n;
+        },
+      });
     }
   }
 
-  // ②' メモがたまっていたら、お昼の12時に1回お知らせ
-  const memoUsers = await q<{ id: string; tz: string; n: number }>(
-    `SELECT u.id, u.tz, count(t.id)::int AS n FROM users u JOIN tasks t ON t.user_id = u.id AND t.status = 'draft' GROUP BY u.id`);
-  for (const mu of memoUsers) {
-    const { date } = nowIn(mu.tz, new Date(now));
-    const at = zonedToUtc(date, '12:00', mu.tz);
-    if (at > now || at < windowStart) continue;
-    if (!(await claim(`memos:${mu.id}:${date}`))) continue;
-    sent += await pushTo(mu.id, { title: '📋 メモがたまっています', body: `貼ったままのメモが${mu.n}枚あります。見ておきますか？`, url: '/?memos=1', tag: `memos-${date}` });
+  // ③ 何も書かずに保存したメモ（2分→5分→10分）。数分おきの送信なので、まとめて届いたときは一番新しい1通だけ送る
+  const drafts = await q<{ id: string; user_id: string; title: string; captured_at: Date }>(
+    `SELECT id, user_id, title, captured_at FROM tasks
+      WHERE status = 'draft' AND title = '' AND description = '' AND captured_at > now() - interval '45 minutes'`);
+  for (const d of drafts) {
+    DRAFT_STEPS.forEach((step, i) => {
+      const at = new Date(d.captured_at).getTime() + step.min * 60000;
+      if (!near(at)) return;
+      out.push({
+        at, key: `draft:${d.id}:${step.min}`,
+        fire: async () => {
+          const later = DRAFT_STEPS[i + 1];
+          if (later && new Date(d.captured_at).getTime() + later.min * 60000 <= now) return 0; // もっと新しい1通を送る
+          return pushTo(d.user_id, { title: '📋 未記入のメモ', body: step.text(d.title), url: `/?edit=${d.id}`, tag: `draft-${d.id}` });
+        },
+      });
+    });
   }
 
-  // ③' 夜20時に「今日の振り返り」（スキップにしていない人だけ）
-  const reviewers = await q<{ id: string; tz: string }>('SELECT id, tz FROM users WHERE NOT review_skip');
-  for (const r of reviewers) {
-    const { date } = nowIn(r.tz, new Date(now));
-    const at = zonedToUtc(date, '20:00', r.tz);
-    if (at > now || at < windowStart) continue;
-    if (!(await claim(`review:${r.id}:${date}`))) continue;
-    sent += await pushTo(r.id, { title: '🌙 今日もおつかれさまでした', body: '今日の振り返りを見ますか？', url: '/?review=1', tag: `review-${date}` });
+  // ④ 毎日決まった時刻：12時にたまったメモ、20時に今日の振り返り
+  const users = await q<{ id: string; tz: string; review_skip: boolean; drafts: number }>(
+    `SELECT u.id, u.tz, u.review_skip, (SELECT count(*)::int FROM tasks t WHERE t.user_id = u.id AND t.status = 'draft') AS drafts FROM users u`);
+  for (const u of users) {
+    const today = nowIn(u.tz, new Date(now)).date;
+    for (const day of [today, addDays(today, 1)]) {
+      const noon = zonedToUtc(day, '12:00', u.tz);
+      if (u.drafts && near(noon)) {
+        out.push({ at: noon, key: `memos:${u.id}:${day}`, fire: () => pushTo(u.id, { title: '📋 メモがたまっています', body: `貼ったままのメモが${u.drafts}枚あります。見ておきますか？`, url: '/?memos=1', tag: `memos-${day}` }) });
+      }
+      const eve = zonedToUtc(day, '20:00', u.tz);
+      if (!u.review_skip && near(eve)) {
+        out.push({ at: eve, key: `review:${u.id}:${day}`, fire: () => pushTo(u.id, { title: '🌙 今日もおつかれさまでした', body: '今日の振り返りを見ますか？', url: '/?review=1', tag: `review-${day}` }) });
+      }
+    }
   }
 
-  // ③ リスト（持ち物チェックなど。時間で表示）
+  // ⑤ リスト（持ち物チェックなど。決まった時間に表示）
   const lists = await q<{ id: string; user_id: string; name: string; show_at: string; weekdays: number[]; tz: string }>(
     `SELECT c.id, c.user_id, c.name, c.show_at, c.weekdays, u.tz FROM checklists c JOIN users u ON u.id = c.user_id
       WHERE c.trigger = 'time' AND c.show_at IS NOT NULL`);
   for (const c of lists) {
-    const { date } = nowIn(c.tz, new Date(now));
-    if (!c.weekdays.includes(weekday(date))) continue;
-    const at = zonedToUtc(date, c.show_at, c.tz);
-    if (at > now || at < windowStart) continue;
-    if (!(await claim(`check:${c.id}:${date}`))) continue;
-    sent += await pushTo(c.user_id, { title: '✅ リスト', body: `「${c.name}」を確認しましょう`, url: `/?checklist=${c.id}`, tag: `check-${c.id}` });
+    const today = nowIn(c.tz, new Date(now)).date;
+    for (const day of [today, addDays(today, 1)]) {
+      if (!c.weekdays.includes(weekday(day))) continue;
+      const at = zonedToUtc(day, c.show_at, c.tz);
+      if (!near(at)) continue;
+      out.push({ at, key: `check:${c.id}:${day}`, fire: () => pushTo(c.user_id, { title: '✅ リスト', body: `「${c.name}」を確認しましょう`, url: `/?checklist=${c.id}`, tag: `check-${c.id}` }) });
+    }
   }
-
-  // ④ 終わる時間から30分たっても完了になっていない予定に「完了しましたか？」
-  sent += await runDoneChecks(now, windowStart);
-
-  await q("DELETE FROM sent_reminders WHERE sent_at < now() - interval '3 days'");
-  await q("DELETE FROM auth_failures WHERE at < now() - interval '1 day'");
-  return { sent };
-}
-
-/** 予定が終わる時間（分）。時刻のない予定は対象外 */
-function endMin(time: string, duration: number) {
-  const [h, m] = time.split(':').map(Number);
-  return h * 60 + m + Math.max(20, duration || 60);
+  return out;
 }
 
 /**
- * 「完了しましたか？」を聞く。終わる時間から30分たっても完了していない予定が対象。
- * 「まだ」なら15分後にもう一度、「保留」ならもう聞かない。返事がなければ、同じ質問は繰り返さない。
- * 聞く相手：表示する人／共通なら作った人／個人グループなら持ち主
+ * 通知の呼び出し（/api/cron、数分おき）の本体。
+ * 時刻が来た通知を送り、次に送る時刻を返す。force でなければ、時刻が来るまでデータベースに触らない（lib/kv.ts）。
  */
-async function runDoneChecks(now: number, windowStart: number): Promise<number> {
-  let sent = 0;
-  const rows = await q<{
-    id: string; user_id: string; title: string; date: string; time: string; duration_min: number; repeat: Repeat | null;
-    done_at: string | null; assignees: string[] | null; tz: string;
-  }>(
-    `SELECT t.id, t.user_id, t.title, to_char(t.date, 'YYYY-MM-DD') AS date, t.time, t.duration_min, t.repeat, t.done_at, t.assignees, u.tz
-       FROM tasks t JOIN users u ON u.id = t.user_id
-      WHERE t.status = 'ready' AND t.time IS NOT NULL AND t.kind <> 'shopping'
-        AND (t.repeat IS NOT NULL OR (t.date BETWEEN current_date - 1 AND current_date + 1 AND t.done_at IS NULL))`);
-  for (const t of rows) {
-    const day = nowIn(t.tz, new Date(now)).date;
-    if (!occursOn(t, day)) continue;
-    const em = endMin(t.time, t.duration_min);
-    if (em >= 24 * 60) continue;
-    const due = zonedToUtc(day, `${String(Math.floor(em / 60)).padStart(2, '0')}:${String(em % 60).padStart(2, '0')}`, t.tz) + 30 * 60000;
-    if (due > now) continue;
-    const [doneRow] = await q('SELECT 1 FROM task_done WHERE task_id = $1 AND occ_date = $2', [t.id, day]);
-    if (t.repeat ? doneRow : t.done_at) continue;
-    const [f] = await q<{ state: string; snooze_count: number; next_at: Date | null }>(
-      'SELECT state, snooze_count, next_at FROM task_followups WHERE task_id = $1 AND occ_date = $2', [t.id, day]);
-    if (f?.state === 'held') continue;
-    let key: string;
-    if (!f) {
-      if (due < windowStart) continue; // 最初の質問は、その時刻を過ぎて間もないときだけ
-      key = `confirm:${t.id}:${day}:0`;
-    } else {
-      const at = f.next_at ? new Date(f.next_at).getTime() : 0;
-      if (!at || at > now || at < windowStart) continue;
-      key = `confirm:${t.id}:${day}:${f.snooze_count}`;
-    }
-    if (!(await claim(key))) continue;
-    const to = t.assignees?.length ? t.assignees : [t.user_id];
-    for (const uid of to) {
-      sent += await pushTo(uid, {
-        title: '✅ 完了しましたか？', body: `「${t.title}」（${t.time}〜）`,
-        url: `/?confirm=${t.id}&day=${day}`, tag: `confirm-${t.id}-${day}`, confirm: { taskId: t.id, day },
-      });
-    }
+export async function runDueReminders(now = Date.now(), force = false): Promise<{ sent: number; checked: boolean; nextAt: string | null }> {
+  if (!force) {
+    const next = await getNextAt();
+    if (next && next > now) return { sent: 0, checked: false, nextAt: new Date(next).toISOString() };
   }
-  return sent;
+  const due = await collect(now);
+  let sent = 0;
+  for (const d of due.sort((a, b) => a.at - b.at)) {
+    if (d.at > now) continue;
+    if (!(await claim(d.key))) continue;
+    sent += await d.fire();
+  }
+  // 次に送る時刻（何もなければ LOOKAHEAD 後に見直す）
+  const future = due.filter(d => d.at > now).map(d => d.at);
+  const nextAt = Math.min(now + LOOKAHEAD, ...future);
+  await setNextAt(nextAt);
+
+  await q("DELETE FROM sent_reminders WHERE sent_at < now() - interval '3 days'");
+  await q("DELETE FROM auth_failures WHERE at < now() - interval '1 day'");
+  return { sent, checked: true, nextAt: new Date(nextAt).toISOString() };
 }
