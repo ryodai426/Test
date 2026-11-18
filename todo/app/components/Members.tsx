@@ -55,7 +55,7 @@ export default function MemberStrip({ state, group, who, today, onPick }: {
   const me = state.me!.id;
   const members = [...group.members].sort((a, b) => (a.id === me ? -1 : b.id === me ? 1 : 0));
   return (
-    <div className="member-strip" role="tablist" aria-label={`${group.name}のメンバー`}>
+    <div className="member-strip" data-keynav="h" role="tablist" aria-label={`${group.name}のメンバー`}>
       {members.map(m => {
         const st = statusOf(state, group, m.id, today, now);
         const on = who === m.id;

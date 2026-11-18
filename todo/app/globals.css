@@ -557,3 +557,10 @@ b, strong { font-weight: var(--w-head); }
   .sheet-wide .sheet-head { padding-bottom: 4px; }
 }
 .banner.confirm-delete { z-index: 95; }
+/* キーボードで選んでいるボタンが分かるように */
+.sidebar :focus-visible, .topbar :focus-visible, .bottombar :focus-visible, .member-strip :focus-visible, .content :focus-visible { outline: 3px solid var(--sky); outline-offset: 2px; position: relative; z-index: 2; }
+.keys-card { max-width: 460px; text-align: left; }
+.keys-card h2 { text-align: center; }
+.keys-list { display: grid; gap: 6px; margin-top: 10px; max-height: 60vh; overflow: auto; }
+.keys-row { display: grid; grid-template-columns: 150px 1fr; align-items: center; gap: 12px; font-size: 14px; }
+.keys-row kbd { margin-right: 4px; }
