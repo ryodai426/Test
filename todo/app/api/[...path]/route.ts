@@ -212,7 +212,7 @@ route('GET', 'state', async ({ url }) => {
   if (!st.me) return { me: null };
   await touchSession(st.me.last_used_at);
   const { last_used_at, ...me } = st.me;
-  return { ...st, me, pushKey: pushEnabled() ? process.env.VAPID_PUBLIC_KEY : null };
+  return { ...st, me, pushKey: pushEnabled() ? process.env.VAPID_PUBLIC_KEY : null, build: process.env.NEXT_PUBLIC_BUILD };
 });
 
 // ---- タスク ---------------------------------------------------------------
