@@ -71,7 +71,7 @@ function TimedColumn({ day, list, isToday, nowMin, onOpen, onNew, compact }: {
             background: o.color + '4d',
           }}
           onClick={ev => { ev.stopPropagation(); onOpen(o); }}>
-          <div className="t">{!compact && <><Emoji char={KIND_PRESETS[o.task.kind]?.icon} size={14} />{' '}</>}{o.task.title}</div>
+          <div className="t">{!compact && !o.task.kind_id && <><Emoji char={KIND_PRESETS[o.task.kind]?.icon} size={14} />{' '}</>}{o.task.title}</div>
           {!compact && <div className="s">{o.task.time}{o.group && !o.group.is_personal ? ` ・${o.group.name}` : ''}</div>}
         </button>
       ))}
@@ -107,7 +107,7 @@ export function DayView(p: Props) {
               <div key={o.task.id} className="row">
                 <button className={'check' + (o.done ? ' on' : '')} onClick={() => p.onToggle(o)} aria-label="完了">{o.done && <Icon name="check" size={13} stroke={2.8} />}</button>
                 <button className={'pill' + (o.done ? ' done' : '')} style={{ background: o.color + '4d' }} onClick={() => p.onOpen(o)}>
-                  <span className="dot" style={{ background: o.color }} /><Emoji char={KIND_PRESETS[o.task.kind]?.icon} size={14} /> {o.task.title}
+                  <span className="dot" style={{ background: o.color }} />{!o.task.kind_id && <Emoji char={KIND_PRESETS[o.task.kind]?.icon} size={14} />} {o.task.title}
                 </button>
               </div>
             ))}

@@ -360,6 +360,7 @@ export function MembersPanel({ state, group, onClose, reload, notify, onLeft }: 
           <input type="text" value={desc} onChange={e => setDesc(e.target.value)} onBlur={() => desc !== group.description && patch({ description: desc })} placeholder="任意" />
         </>
       )}
+      <KindsEditor state={state} group={group} reload={reload} notify={notify} />
       <div className="label">グループの色</div>
       <div className="row" style={{ gap: 10 }}>
         {PALETTE.map(c => <button key={c} className={'swatch' + (group.color === c ? ' on' : '')} style={{ background: c }} onClick={() => patch({ color: c })} />)}
@@ -378,6 +379,42 @@ export function MembersPanel({ state, group, onClose, reload, notify, onLeft }: 
         </>
       )}
     </Sheet>
+  );
+}
+
+function KindsEditor({ state, group, reload, notify }: { state: State; group: Group; reload: () => Promise<void> | void; notify: (m: string) => void }) {
+  const kinds = (state.kinds || []).filter(k => k.group_id === group.id);
+  const [name, setName] = useState('');
+  async function add() {
+    if (!name.trim()) return;
+    try {
+      await api(`groups/${group.id}/kinds`, 'POST', { name: name.trim() });
+      setName('');
+      reload();
+    } catch (e: any) { notify(e.message); }
+  }
+  return (
+    <>
+      <div className="label">タスクの種類（{group.is_personal ? '自分だけ' : 'グループのみんなで共有'}）</div>
+      <div className="row wrap">
+        {kinds.map(k => (
+          <span key={k.id} className="chip">
+            {k.name}
+            <button className="kind-x" aria-label={`「${k.name}」を削除`} onClick={async () => {
+              if (!confirm(`種類「${k.name}」を削除しますか？\nこの種類の予定は「一般」になります。`)) return;
+              await api(`kinds/${k.id}`, 'DELETE');
+              reload();
+            }}><Icon name="close" size={14} stroke={2.4} /></button>
+          </span>
+        ))}
+        {kinds.length === 0 && <span className="small muted">まだありません。予定の入力画面の「＋ 種類を追加」からも足せます。</span>}
+      </div>
+      <div className="row" style={{ marginTop: 8 }}>
+        <input type="text" placeholder="例：営業訪問、通院、塾" value={name} maxLength={20} onChange={e => setName(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) add(); }} />
+        <button className="btn small primary" onClick={add} disabled={!name.trim()}>追加</button>
+      </div>
+    </>
   );
 }
 

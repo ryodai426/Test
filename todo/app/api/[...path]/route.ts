@@ -95,6 +95,13 @@ function cleanTask(b: any, partial: boolean) {
   return out;
 }
 
+/** そのグループの種類なら id を、違えば null を返す */
+async function kindIdFor(groupId: string, kindId: unknown): Promise<string | null> {
+  if (!kindId || typeof kindId !== 'string') return null;
+  const k = await one<{ id: string }>('SELECT id FROM task_kinds WHERE id = $1 AND group_id = $2', [kindId, groupId]).catch(() => null);
+  return k?.id ?? null;
+}
+
 // ---------------------------------------------------------------- ルーティング
 
 type Handler = (ctx: { req: NextRequest; body: any; params: string[]; url: URL }) => Promise<unknown>;
@@ -189,7 +196,7 @@ route('GET', 'state', async ({ url }) => {
       GROUP BY g.id ORDER BY g.is_personal DESC, g.created_at`, [u.id]);
 
   const tasks = await q(
-    `SELECT t.id, t.user_id, t.group_id, t.status, t.title, t.description, t.kind, t.color,
+    `SELECT t.id, t.user_id, t.group_id, t.status, t.title, t.description, t.kind, t.kind_id, t.color,
             to_char(t.date, 'YYYY-MM-DD') AS date, t.time, t.duration_min, t.reminders, t.remind_all, t.repeat,
             t.captured_at, t.detailed_at, t.done_at, t.done_by, t.updated_at
        FROM tasks t JOIN memberships m ON m.group_id = t.group_id AND m.user_id = $1
@@ -212,13 +219,18 @@ route('GET', 'state', async ({ url }) => {
        LEFT JOIN checklist_checks cc ON cc.item_id = i.id AND cc.day = COALESCE($2::date, current_date)
       WHERE c.user_id = $1 GROUP BY c.id ORDER BY c.position, c.created_at`, [u.id, day]);
 
+  const kinds = await q(
+    `SELECT k.id, k.group_id, k.name FROM task_kinds k
+       JOIN memberships m ON m.group_id = k.group_id AND m.user_id = $1
+      ORDER BY k.created_at`, [u.id]);
+
   const notifications = await q(
     `SELECT n.id, n.kind, n.task_id, to_char(n.occ_date, 'YYYY-MM-DD') AS occ_date, n.body, n.created_at, n.read_at, a.name AS actor
        FROM notifications n LEFT JOIN users a ON a.id = n.actor_id
       WHERE n.user_id = $1 ORDER BY n.id DESC LIMIT 40`, [u.id]);
 
   return {
-    me: u, groups, tasks, done, items, reactions, checklists, notifications,
+    me: u, groups, tasks, done, items, reactions, checklists, notifications, kinds,
     pushKey: pushEnabled() ? process.env.VAPID_PUBLIC_KEY : null,
   };
 });
@@ -237,10 +249,11 @@ route('POST', 'tasks', async ({ body }) => {
   const g = await requireMember(u.id, groupId);
   const f = cleanTask(body, false);
   if (!f.title) throw bad('タイトルを入力してください');
+  const kindId = await kindIdFor(groupId, body.kind_id);
   const t = await one<{ id: string }>(
-    `INSERT INTO tasks (user_id, group_id, status, title, description, kind, color, date, time, duration_min, reminders, remind_all, repeat, detailed_at)
-     VALUES ($1,$2,'ready',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now()) RETURNING id`,
-    [u.id, groupId, f.title, f.description, f.kind, f.color, f.date, f.time, f.duration_min, f.reminders, f.remind_all, f.repeat]);
+    `INSERT INTO tasks (user_id, group_id, status, title, description, kind, kind_id, color, date, time, duration_min, reminders, remind_all, repeat, detailed_at)
+     VALUES ($1,$2,'ready',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, now()) RETURNING id`,
+    [u.id, groupId, f.title, f.description, kindId ? 'general' : f.kind, kindId, f.color, f.date, f.time, f.duration_min, f.reminders, f.remind_all, f.repeat]);
   if (Array.isArray(body.items)) {
     for (const [i, label] of body.items.map((s: unknown) => str(s, 80)).filter(Boolean).entries()) {
       await q('INSERT INTO task_items (task_id, label, position) VALUES ($1,$2,$3)', [t!.id, label, i]);
@@ -259,6 +272,13 @@ route('PATCH', 'tasks/:id', async ({ body, params }) => {
     await requireMember(u.id, body.group_id);
     groupId = body.group_id;
     f.group_id = groupId;
+  }
+  // 自分たちで足した種類：そのグループのものだけ使える。グループを移したら外す
+  if ('kind_id' in body) {
+    f.kind_id = await kindIdFor(groupId, body.kind_id);
+    if (f.kind_id) f.kind = 'general';
+  } else if (t.kind_id && groupId !== t.group_id) {
+    f.kind_id = await kindIdFor(groupId, t.kind_id);
   }
   const becomingReady = t.status === 'draft' && body.status === 'ready';
   if (becomingReady) {
@@ -396,6 +416,28 @@ route('PATCH', 'groups/:id', async ({ body, params }) => {
     'notify_create' in body ? !!body.notify_create : g.notify_create,
     'notify_done' in body ? !!body.notify_done : g.notify_done,
   ]);
+  return { ok: true };
+});
+
+// ---- グループで共有する、自分たちで足したタスクの種類
+route('POST', 'groups/:id/kinds', async ({ body, params }) => {
+  const u = await requireUser();
+  const g = await requireMember(u.id, params[0]);
+  const name = str(body.name, 20);
+  if (!name) throw bad('種類の名前を入力してください');
+  if (Object.values(KIND_PRESETS).some(k => k.label === name)) throw bad(`「${name}」はもともとある種類です`);
+  const r = await one<{ id: string }>(
+    'INSERT INTO task_kinds (group_id, name, created_by) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING id', [g.id, name, u.id]);
+  if (!r) throw bad(`「${name}」はもうこのグループにあります`);
+  return r;
+});
+
+route('DELETE', 'kinds/:id', async ({ params }) => {
+  const u = await requireUser();
+  const k = await one<{ id: string; group_id: string }>('SELECT id, group_id FROM task_kinds WHERE id = $1', [params[0]]);
+  if (!k) throw notFound();
+  await requireMember(u.id, k.group_id);
+  await q('DELETE FROM task_kinds WHERE id = $1', [k.id]); // 使っていたタスクは「一般」に戻る
   return { ok: true };
 });
 

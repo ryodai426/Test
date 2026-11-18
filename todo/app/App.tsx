@@ -180,7 +180,7 @@ export default function App() {
             const key = `fired:${t.id}:${day}:${r.key}`;
             if (r.at > now || r.at < now - 120000 || LS.get(key)) continue;
             LS.set(key, '1');
-            setBanner({ icon: KIND_PRESETS[t.kind]?.icon || '⏰', title: r.key === '0' ? `${t.title}の時間です！` : t.title, body: reminderMessage(t.title, r.key, t.time) });
+            setBanner({ icon: (!t.kind_id && KIND_PRESETS[t.kind]?.icon) || '⏰', title: r.key === '0' ? `${t.title}の時間です！` : t.title, body: reminderMessage(t.title, r.key, t.time) });
           }
         }
       }
@@ -422,6 +422,7 @@ export default function App() {
       {editor && (
         <TaskEditor key={(editor.task?.id || 'new') + (editor.task?.updated_at || '')} state={state} init={editor}
           onClose={() => setEditor(null)}
+          onRefresh={load}
           onSaved={async msg => {
             await load();
             if (msg) { setEditor(null); notify(msg); }

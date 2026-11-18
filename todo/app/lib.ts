@@ -8,10 +8,11 @@ export type Group = {
 };
 export type Task = {
   id: string; user_id: string; group_id: string; status: 'draft' | 'ready'; title: string; description: string;
-  kind: string; color: string | null; date: string | null; time: string | null; duration_min: number;
+  kind: string; kind_id: string | null; color: string | null; date: string | null; time: string | null; duration_min: number;
   reminders: string[]; remind_all: boolean; repeat: Repeat | null; captured_at: string; detailed_at: string | null;
   done_at: string | null; done_by: string | null; updated_at: string;
 };
+export type Kind = { id: string; group_id: string; name: string };
 export type Item = { id: string; task_id: string; label: string; checked: boolean; position: number };
 export type Checklist = {
   id: string; name: string; trigger: 'time' | 'after_shopping' | 'manual'; show_at: string | null; weekdays: number[];
@@ -23,6 +24,7 @@ export type State = {
   groups: Group[]; tasks: Task[]; done: { task_id: string; occ_date: string; user_id: string }[];
   items: Item[]; reactions: { task_id: string; occ_date: string; user_id: string; emoji: string }[];
   checklists: Checklist[]; notifications: Notice[]; pushKey: string | null;
+  kinds: Kind[];
 };
 
 export class ApiError extends Error {

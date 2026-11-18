@@ -11,6 +11,8 @@ function greeting(name: string) {
   return `${word}、${name}さん`;
 }
 
+const kindName = (s: State, id: string | null) => (id ? (s.kinds || []).find(k => k.id === id)?.name : '') || '';
+
 // 付箋の傾き（毎回同じ並びになるよう、番号から決める）
 const TILT = [-2.2, 1.6, -1, 2.4, -1.8, 1, -2.6, 1.9];
 
@@ -50,10 +52,10 @@ export default function TodayBrief({ state, today, onClose }: { state: State; to
               }}>
               <div className="brief-time">{o.task.time || '終日'}</div>
               <div className="brief-title">
-                <Emoji char={KIND_PRESETS[o.task.kind]?.icon} size={18} /> {o.task.title}
+                {!o.task.kind_id && <><Emoji char={KIND_PRESETS[o.task.kind]?.icon} size={18} />{' '}</>}{o.task.title}
               </div>
               <div className="brief-meta">
-                {o.group ? o.group.name : ''}{o.done ? '・完了' : ''}
+                {[kindName(state, o.task.kind_id), o.group?.name, o.done ? '完了' : ''].filter(Boolean).join('・')}
               </div>
             </div>
           ))}
