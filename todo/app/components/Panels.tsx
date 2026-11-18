@@ -6,7 +6,7 @@ import { Board, Note, PAPERS, TAPES } from './Board';
 import { act, isTmp, tmpId, P } from '../store';
 import { confirmDelete, hasSkippedConfirms, resetSkippedConfirms } from '../confirm';
 import Emoji, { EmojiText } from './Emoji';
-import { sw, isFor, api, fmtJpDate, hhmm, localDateOf, localToday, groupColor, type Checklist, type Group, type State, type Task } from '../lib';
+import { sw, isFor, api, fmtJpDate, hhmm, localDateOf, localToday, groupColor, GROUP_COLORS, type Checklist, type Group, type State, type Task } from '../lib';
 
 function Sheet({ title, icon, onClose, children, foot, side = true }: { title: string; icon?: string; onClose: () => void; children: React.ReactNode; foot?: React.ReactNode; side?: boolean }) {
   return (
@@ -198,9 +198,11 @@ export function GroupDrawer({ state, current, onPick, onClose, reload }: {
 }) {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
+  // まだ使っていない色を最初に選んでおく
+  const [color, setColor] = useState(() => GROUP_COLORS.find(c => !state.groups.some(g => groupColor(g).toUpperCase() === c)) || GROUP_COLORS[1]);
   async function create() {
     if (!name.trim()) return;
-    const g = await api<{ id: string }>('groups', 'POST', { name });
+    const g = await api<{ id: string }>('groups', 'POST', { name, color });
     await reload();
     onPick(g.id);
   }
@@ -219,6 +221,10 @@ export function GroupDrawer({ state, current, onPick, onClose, reload }: {
       {creating ? (
         <div>
           <input type="text" placeholder="例：家族、営業チーム" value={name} onChange={e => setName(e.target.value)} autoFocus />
+          <div className="label">色</div>
+          <div className="row wrap" style={{ gap: 10 }}>
+            {GROUP_COLORS.map(c => <button key={c} className={'swatch' + (color === c ? ' on' : '')} style={{ background: c }} onClick={() => setColor(c)} aria-label="色" />)}
+          </div>
           <button className="btn primary block" style={{ marginTop: 12 }} onClick={create} disabled={!name.trim()}>作成して招待リンクを出す</button>
         </div>
       ) : (
@@ -267,6 +273,15 @@ export function MembersPanel({ state, group, onClose, reload, notify, onLeft }: 
         </>
       )}
       <KindsEditor state={state} group={group} reload={reload} notify={notify} />
+      {!group.is_personal && (
+        <>
+          <div className="label">グループの色</div>
+          <div className="row wrap" style={{ gap: 10 }}>
+            {GROUP_COLORS.map(c => <button key={c} className={'swatch' + (groupColor(group).toUpperCase() === c ? ' on' : '')} style={{ background: c }} onClick={() => patch({ color: c })} aria-label="色" />)}
+          </div>
+          <div className="small muted" style={{ marginTop: 6 }}>共通の予定はこの色になります</div>
+        </>
+      )}
       {!group.is_personal && (
         <>
           <div className="label">共有設定</div>

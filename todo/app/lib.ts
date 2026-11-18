@@ -1,5 +1,5 @@
 'use client';
-import { occursOn, type Repeat } from '@/lib/time';
+import { occursOn, titleOr, type Repeat } from '@/lib/time';
 
 export type Member = { id: string; name: string };
 export type Group = {
@@ -93,6 +93,11 @@ export function isFor(t: Task, who: string, s: State): boolean {
   return !t.assignees || t.assignees.includes(who);
 }
 
+/** 画面に出す予定の名前（タイトルが空なら種類の名前） */
+export function titleOf(t: Pick<Task, 'title' | 'kind' | 'kind_id'>, s: State): string {
+  return titleOr(t, t.kind_id ? (s.kinds || []).find(k => k.id === t.kind_id)?.name : null);
+}
+
 /** その日の予定。who を省略したら自分の予定 */
 export function occurrences(s: State, day: string, groupFilter: string, who?: string): Occ[] {
   const groups = new Map(s.groups.map(g => [g.id, g]));
@@ -129,32 +134,41 @@ export function followupOf(s: State, taskId: string, day: string): Followup | un
 }
 
 // ---- 予定の色 ------------------------------------------------------------------
-// 個人の予定は黄色で固定。グループの予定は「表示する人」で決める（共通は緑、メンバーはそれぞれの色）。
-// 入力画面で色は選ばない（前に選んだ色 tasks.color は使わない）
+// 個人の予定は黄色で固定。グループの予定は「表示する人」で決める：共通＝グループの色、メンバー＝それぞれの色。
+// 予定の入力画面で色は選ばない（前に選んだ色 tasks.color は使わない）。グループの色はメンバー・共有設定で選ぶ
 export const PERSONAL_COLOR = '#F5E211';
-export const COMMON_COLOR = '#8ED462';
-/** メンバーの色（黄色・緑を除いた10色。グループに入った順に割り当てる。11人目からは繰り返し） */
-export const MEMBER_COLORS = ['#2BA0FF', '#FF705D', '#A77BEA', '#FF9F43', '#A0522D', '#9AA0A6', '#17B5A6', '#34508F', '#F06292', '#EBC1FF'];
-/** グループ自体の色（左のメニューの点）。選ばずに自動で付ける（個人は黄、ほかはメンバーの色から、まだ使っていない色） */
-export const GROUP_COLORS = MEMBER_COLORS;
+export const COMMON_COLOR = '#8ED462'; // グループの色が分からないときの共通の色
+/** グループとメンバーに使う色（黄色を除いた11色）。メンバーには、グループの色と重ならないように割り当てる（memberColor） */
+export const COLOR_POOL = ['#8ED462', '#2BA0FF', '#FF705D', '#A77BEA', '#FF9F43', '#A0522D', '#9AA0A6', '#17B5A6', '#34508F', '#F06292', '#EBC1FF'];
+export const GROUP_COLORS = COLOR_POOL;
+export const MEMBER_COLORS = COLOR_POOL; // 互換のため
+
+/** グループの色（左のメニューの点・共通の予定の色）。個人は黄色。前に黄色を選んでいた共有グループは青 */
 export function groupColor(g: Pick<Group, 'is_personal' | 'color'> | undefined): string {
-  if (!g) return '#9AA0A6';
+  if (!g) return COMMON_COLOR;
   if (g.is_personal) return PERSONAL_COLOR;
-  // 前に黄色や緑を選んでいたグループは、個人・共通と見分けられるように青にする
-  return [PERSONAL_COLOR, COMMON_COLOR].includes(g.color.toUpperCase()) ? GROUP_COLORS[0] : g.color;
+  const c = (g.color || '').toUpperCase();
+  return !c || c === PERSONAL_COLOR ? '#2BA0FF' : g.color;
 }
 
-/** そのグループで、その人の色 */
+/**
+ * そのグループで、その人の色。グループに入った順に、青・コーラル・紫…（COLOR_POOL の2番目から）を割り当てる。
+ * その色がグループの色と同じ人だけ、緑（グループが緑なら紫）に替える。グループの色を変えても、ほかの人の色は変わらない
+ */
 export function memberColor(g: Group | undefined, userId: string): string {
   const i = g ? g.members.findIndex(m => m.id === userId) : -1;
-  return i < 0 ? '#9AA0A6' : MEMBER_COLORS[i % MEMBER_COLORS.length];
+  if (i < 0) return '#9AA0A6';
+  const own = groupColor(g).toUpperCase();
+  const c = COLOR_POOL[1 + (i % (COLOR_POOL.length - 1))];
+  if (c !== own) return c;
+  return own === COLOR_POOL[0] ? COLOR_POOL[3] : COLOR_POOL[0];
 }
 
-/** 予定の色：個人＝黄、グループの共通＝緑、表示する人を選んだ予定＝その人の色（複数なら、グループに先に入った人） */
+/** 予定の色：個人＝黄、グループの共通＝グループの色、表示する人を選んだ予定＝その人の色（複数なら、グループに先に入った人） */
 export function taskColor(t: Pick<Task, 'group_id' | 'assignees'>, s: State): string {
   const g = s.groups.find(x => x.id === t.group_id);
   if (!g || g.is_personal) return PERSONAL_COLOR;
-  if (!t.assignees?.length) return COMMON_COLOR;
+  if (!t.assignees?.length) return groupColor(g);
   const first = g.members.find(m => t.assignees!.includes(m.id));
-  return first ? memberColor(g, first.id) : COMMON_COLOR;
+  return first ? memberColor(g, first.id) : groupColor(g);
 }

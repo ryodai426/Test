@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { memberColor, occurrences, toMin, type Group, type State } from '../lib';
 import Icon from './Icon';
+import { titleOr } from '@/lib/time';
 
 // アイコンの色（文字が読める明るい色だけ）
 const AVATAR_COLORS = ['#8ED462', '#2BA0FF', '#FF705D', '#F5E211', '#EBC1FF', '#FFBE9F'];
@@ -37,11 +38,11 @@ function statusOf(state: State, group: Group, memberId: string, today: string, n
     const e = s + Math.max(20, o.task.duration_min);
     if (now >= s && now < e) {
       const end = `${String(Math.floor(e / 60) % 24).padStart(2, '0')}:${String(e % 60).padStart(2, '0')}`;
-      return { kind: 'now', text: `${o.task.title} 〜${end}` };
+      return { kind: 'now', text: `${titleOr(o.task)} 〜${end}` };
     }
   }
   const next = list.find(o => toMin(o.task.time!) > now);
-  if (next) return { kind: 'next', text: `次 ${next.task.time} ${next.task.title}` };
+  if (next) return { kind: 'next', text: `次 ${next.task.time} ${titleOr(next.task)}` };
   return { kind: 'free', text: '空き' };
 }
 
@@ -142,7 +143,7 @@ export function MemberFocus({ state, group, who, today, onOpenTask, onClose }: {
       {cur ? (
         <button className="mf-now" onClick={() => onOpenTask(cur.task.id, today)} style={{ ['--c' as string]: cur.color }}>
           <span className="mf-label now">いまやっていること</span>
-          <span className="mf-title">{cur.task.starred && <span className="star-mark">★</span>}{cur.task.title}</span>
+          <span className="mf-title">{cur.task.starred && <span className="star-mark">★</span>}{titleOr(cur.task)}</span>
           <span className="mf-meta">{hm(span(cur).s)}–{hm(span(cur).e)}・あと{span(cur).e - now}分{cur.task.description ? '' : ''}</span>
           {cur.task.description && <span className="mf-desc">{cur.task.description}</span>}
         </button>
@@ -151,7 +152,7 @@ export function MemberFocus({ state, group, who, today, onOpenTask, onClose }: {
       )}
       {next && (
         <button className="mf-next" onClick={() => onOpenTask(next.task.id, today)}>
-          <span className="mf-label">次</span>{next.task.time} {next.task.title}<span className="mf-meta">あと{span(next).s - now}分</span>
+          <span className="mf-label">次</span>{next.task.time} {titleOr(next.task)}<span className="mf-meta">あと{span(next).s - now}分</span>
         </button>
       )}
     </div>

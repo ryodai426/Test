@@ -1,11 +1,11 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { confirmDelete } from '../confirm';
-import { addDays, daysBetween, KIND_PRESETS, REMINDER_CHOICES, REMINDER_LABELS, WEEK_LABELS, weekday, type Repeat } from '@/lib/time';
+import { addDays, daysBetween, KIND_PRESETS, titleOr, REMINDER_CHOICES, REMINDER_LABELS, WEEK_LABELS, weekday, type Repeat } from '@/lib/time';
 import Icon from './Icon';
 import Emoji from './Emoji';
 import { act, draftTask, P } from '../store';
-import { api, COMMON_COLOR, groupColor, hhmm, localToday, memberColor, type State, type Task } from '../lib';
+import { api, groupColor, hhmm, localToday, memberColor, type State, type Task } from '../lib';
 
 export type EditorInit = { task?: Task; day?: string; time?: string; groupId?: string; kind?: string; occDay?: string; title?: string; assignees?: string[]; detail?: boolean; duration?: number };
 
@@ -115,7 +115,6 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
 
   async function save(scope?: Scope) {
     setErr('');
-    if (!memoMode && !title.trim()) { setErr('タイトルを入力してください'); return; }
     if (isRepeat && !scope) { setAskScope('save'); return; }
     setBusy(true);
     if (memoMode) {
@@ -159,7 +158,7 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
   async function remove(scope?: Scope) {
     if (!t) return;
     if (isRepeat && !scope) { setAskScope('delete'); return; }
-    if (!isRepeat && !(await confirmDelete(isDraft ? 'このメモを削除しますか？' : `「${t.title || 'タスク'}」を削除しますか？`, 'task'))) return;
+    if (!isRepeat && !(await confirmDelete(isDraft ? 'このメモを削除しますか？' : `「${titleOr(t)}」を削除しますか？`, 'task'))) return;
     onSaved('削除しました');
     if (isRepeat && scope && scope !== 'all') act(P.splitTask(t.id, openedDay, scope, null), () => api(`tasks/${t.id}/split`, 'POST', { day: openedDay, scope, delete: true }));
     else act(P.removeTask(t.id), () => api(`tasks/${t.id}`, 'DELETE'));
@@ -363,7 +362,7 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
             <>
               <div className="label">表示する人</div>
               <div className="row wrap">
-                <button className={'chip' + (assignees === null ? ' on' : '')} onClick={() => setAssignees(null)}><span className="dot" style={{ background: COMMON_COLOR, marginRight: 6 }} />共通</button>
+                <button className={'chip' + (assignees === null ? ' on' : '')} onClick={() => setAssignees(null)}><span className="dot" style={{ background: groupColor(group), marginRight: 6 }} />共通</button>
                 {[...group.members].sort((a, b) => (a.id === meId ? -1 : b.id === meId ? 1 : 0)).map(m => {
                   const on = !!assignees?.includes(m.id);
                   return (

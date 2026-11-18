@@ -1,6 +1,6 @@
 import { q } from './db';
 import { getNextAt, setNextAt } from './kv';
-import { DRAFT_STEPS, nowIn, occursOn, addDays, reminderMessage, reminderTimes, zonedToUtc, weekday, type Repeat } from './time';
+import { DRAFT_STEPS, titleOr, nowIn, occursOn, addDays, reminderMessage, reminderTimes, zonedToUtc, weekday, type Repeat } from './time';
 
 import { createECDH } from 'crypto';
 
@@ -123,6 +123,7 @@ async function collect(now: number): Promise<Due[]> {
        FROM tasks t JOIN users u ON u.id = t.user_id
       WHERE t.status = 'ready' AND t.time IS NOT NULL AND t.done_at IS NULL
         AND (t.repeat IS NOT NULL OR t.date BETWEEN current_date - 2 AND current_date + 2)`);
+  for (const t of tasks) t.title = titleOr(t); // タイトルが空なら種類の名前
   const isDone = async (t: { id: string; repeat: Repeat | null }, day: string) =>
     !!t.repeat && (await q('SELECT 1 FROM task_done WHERE task_id = $1 AND occ_date = $2', [t.id, day])).length > 0;
 

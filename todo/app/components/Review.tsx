@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { addDays, KIND_PRESETS, WEEK_LABELS, weekday } from '@/lib/time';
+import { addDays, KIND_PRESETS, titleOr, WEEK_LABELS, weekday } from '@/lib/time';
 import { api, isFor, localDateOf, occurrences, type Occ, type State, type Task, taskColor } from '../lib';
 import Emoji from './Emoji';
 import Icon, { Scene } from './Icon';
@@ -209,7 +209,7 @@ export function Review({ state, today, onClose, reload }: { state: State; today:
             <Note key={x.o.task.id + x.o.day} i={i} color={x.o.color} className={x.early ? 'early' : ''}>
               {x.early > 0 && <div className="early-badge"><Emoji char="🎉" size={16} /> {pick(PRAISES, x.o.task.id)(x.early)}</div>}
               <div className="brief-time">{x.o.task.time || '終日'}</div>
-              <div className="brief-title">{x.o.task.starred && <span className="star-mark">★</span>}{!x.o.task.kind_id && <><Emoji char={KIND_PRESETS[x.o.task.kind]?.icon} size={18} />{' '}</>}{x.o.task.title}</div>
+              <div className="brief-title">{x.o.task.starred && <span className="star-mark">★</span>}{!x.o.task.kind_id && <><Emoji char={KIND_PRESETS[x.o.task.kind]?.icon} size={18} />{' '}</>}{titleOr(x.o.task)}</div>
               <div className="brief-meta">{x.o.group && !x.o.group.is_personal ? x.o.group.name : '個人'}</div>
               <Reactions state={state} task={x.o.task} day={x.o.day} canReact={false} onReact={() => {}} />
             </Note>
@@ -222,7 +222,7 @@ export function Review({ state, today, onClose, reload }: { state: State; today:
           {tomorrow.map((o, i) => (
             <Note key={o.task.id} i={i + 2} color={o.color}>
               <div className="brief-time">{timeRange(o.task)}</div>
-              <div className="brief-title">{o.task.starred && <span className="star-mark">★</span>}{o.task.title}</div>
+              <div className="brief-title">{o.task.starred && <span className="star-mark">★</span>}{titleOr(o.task)}</div>
               <div className="brief-meta">{o.group && !o.group.is_personal ? o.group.name : '個人'}</div>
             </Note>
           ))}
@@ -235,7 +235,7 @@ export function Review({ state, today, onClose, reload }: { state: State; today:
               {team.map((x, i) => (
                 <Note key={x.o.task.id + x.o.day + i} i={i + 3} color={x.o.color}>
                   <div className="brief-time">{memberName(x.by)}さん</div>
-                  <div className="brief-title">{x.o.task.title}</div>
+                  <div className="brief-title">{titleOr(x.o.task)}</div>
                   <div className="brief-meta">{x.o.group?.name}{x.early ? `・予定より${x.early}分早く完了` : ''}</div>
                   <Reactions state={state} task={x.o.task} day={x.o.day} canReact onReact={e => react(x.o.task, x.o.day, e)} />
                 </Note>
