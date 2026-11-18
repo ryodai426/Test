@@ -5,7 +5,7 @@ import { addDays, daysBetween, KIND_PRESETS, REMINDER_CHOICES, REMINDER_LABELS, 
 import Icon from './Icon';
 import Emoji from './Emoji';
 import { act, draftTask, P } from '../store';
-import { api, COMMON_COLOR, hhmm, localToday, memberColor, type State, type Task } from '../lib';
+import { api, COMMON_COLOR, groupColor, hhmm, localToday, memberColor, type State, type Task } from '../lib';
 
 export type EditorInit = { task?: Task; day?: string; time?: string; groupId?: string; kind?: string; occDay?: string; title?: string; assignees?: string[]; detail?: boolean; duration?: number };
 
@@ -353,7 +353,7 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
               <div className="row wrap">
                 {state.groups.map(g => (
                   <button key={g.id} className={'chip' + (g.id === groupId ? ' on' : '')} onClick={() => pickGroup(g.id)}>
-                    <span className="dot" style={{ background: g.color, marginRight: 6 }} />{g.name}
+                    <span className="dot" style={{ background: groupColor(g), marginRight: 6 }} />{g.name}
                   </button>
                 ))}
               </div>

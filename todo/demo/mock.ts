@@ -237,7 +237,7 @@ async function handle(path: string, method: string, b: Any): Promise<any> {
   }
   if (p === 'groups' && M === 'POST') {
     if (!b.name?.trim()) fail('グループ名を入力してください');
-    const g = { id: id(), name: b.name.trim(), description: '', color: b.color || '#2BA0FF', is_personal: false, owner_id: 'me', notify_create: true, notify_done: true, invite_token: 'demo-' + seq, m: ['me'] };
+    const g = { id: id(), name: b.name.trim(), description: '', color: ['#2BA0FF', '#FF705D', '#A77BEA', '#FF9F43', '#A0522D', '#9AA0A6', '#17B5A6', '#34508F', '#F06292', '#EBC1FF'].find(c => !groups.some(g => g.color.toUpperCase() === c)) || '#9AA0A6', is_personal: false, owner_id: 'me', notify_create: true, notify_done: true, invite_token: 'demo-' + seq, m: ['me'] };
     groups.push(g);
     return { id: g.id };
   }

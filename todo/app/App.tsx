@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { addDays, DRAFT_STEPS, occursOn, reminderMessage, reminderTimes, KIND_PRESETS } from '@/lib/time';
-import { api, ApiError, asksMe, followupOf, isDemo, isFor, sw, localToday, occurrences, taskColor, type Checklist, type Occ, type State, type Task } from './lib';
+import { api, ApiError, asksMe, followupOf, isDemo, isFor, sw, localToday, occurrences, taskColor, groupColor, type Checklist, type Occ, type State, type Task } from './lib';
 import Login from './components/Login';
 import Icon, { Logo, Scene } from './components/Icon';
 import Emoji, { EmojiText } from './components/Emoji';
@@ -497,7 +497,7 @@ export default function App() {
 
   const groupTitle = (
     <>
-      {currentGroup ? <span className="dot" style={{ background: currentGroup.color }} /> : null}
+      {currentGroup ? <span className="dot" style={{ background: groupColor(currentGroup) }} /> : null}
       <span className="title-name">{currentGroup ? currentGroup.name : 'すべて表示'}</span>
       {whoName && <span className="title-who">・{whoName}さんの予定</span>}
     </>
@@ -525,7 +525,7 @@ export default function App() {
         <button className={'side-link' + (groupFilter === 'all' ? ' on' : '')} onClick={() => setGroupFilter('all')}><Icon name="calendar" size={19} />すべて表示</button>
         {state.groups.map(g => (
           <button key={g.id} className={'side-link' + (groupFilter === g.id ? ' on' : '')} onClick={() => setGroupFilter(g.id)}>
-            <span className="dot" style={{ background: g.color }} />{g.name}<span className="count">{g.is_personal ? '' : `${g.members.length}人`}</span>
+            <span className="dot" style={{ background: groupColor(g) }} />{g.name}<span className="count">{g.is_personal ? '' : `${g.members.length}人`}</span>
           </button>
         ))}
         <button className="side-link dim" onClick={() => setPanel('groups')}><Icon name="plus" size={19} />新しいグループ</button>

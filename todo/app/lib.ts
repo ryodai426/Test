@@ -135,8 +135,14 @@ export const PERSONAL_COLOR = '#F5E211';
 export const COMMON_COLOR = '#8ED462';
 /** メンバーの色（黄色・緑を除いた10色。グループに入った順に割り当てる。11人目からは繰り返し） */
 export const MEMBER_COLORS = ['#2BA0FF', '#FF705D', '#A77BEA', '#FF9F43', '#A0522D', '#9AA0A6', '#17B5A6', '#34508F', '#F06292', '#EBC1FF'];
-/** グループ自体の色（左のメニューの点）。個人の黄色と重ならないように、メンバーの色から選ぶ */
-export const PALETTE = MEMBER_COLORS;
+/** グループ自体の色（左のメニューの点）。選ばずに自動で付ける（個人は黄、ほかはメンバーの色から、まだ使っていない色） */
+export const GROUP_COLORS = MEMBER_COLORS;
+export function groupColor(g: Pick<Group, 'is_personal' | 'color'> | undefined): string {
+  if (!g) return '#9AA0A6';
+  if (g.is_personal) return PERSONAL_COLOR;
+  // 前に黄色や緑を選んでいたグループは、個人・共通と見分けられるように青にする
+  return [PERSONAL_COLOR, COMMON_COLOR].includes(g.color.toUpperCase()) ? GROUP_COLORS[0] : g.color;
+}
 
 /** そのグループで、その人の色 */
 export function memberColor(g: Group | undefined, userId: string): string {

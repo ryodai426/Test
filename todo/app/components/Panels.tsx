@@ -6,7 +6,7 @@ import { Board, Note, PAPERS, TAPES } from './Board';
 import { act, isTmp, tmpId, P } from '../store';
 import { confirmDelete, hasSkippedConfirms, resetSkippedConfirms } from '../confirm';
 import Emoji, { EmojiText } from './Emoji';
-import { sw, isFor, api, fmtJpDate, hhmm, localDateOf, localToday, PALETTE, type Checklist, type Group, type State, type Task } from '../lib';
+import { sw, isFor, api, fmtJpDate, hhmm, localDateOf, localToday, groupColor, type Checklist, type Group, type State, type Task } from '../lib';
 
 function Sheet({ title, icon, onClose, children, foot, side = true }: { title: string; icon?: string; onClose: () => void; children: React.ReactNode; foot?: React.ReactNode; side?: boolean }) {
   return (
@@ -198,10 +198,9 @@ export function GroupDrawer({ state, current, onPick, onClose, reload }: {
 }) {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
-  const [color, setColor] = useState(PALETTE[1]);
   async function create() {
     if (!name.trim()) return;
-    const g = await api<{ id: string }>('groups', 'POST', { name, color });
+    const g = await api<{ id: string }>('groups', 'POST', { name });
     await reload();
     onPick(g.id);
   }
@@ -211,7 +210,7 @@ export function GroupDrawer({ state, current, onPick, onClose, reload }: {
         <button className={'side-link' + (current === 'all' ? ' on' : '')} onClick={() => onPick('all')}><Icon name="calendar" size={19} />すべて表示 <span className="count">色分けして重ねる</span></button>
         {state.groups.map(g => (
           <button key={g.id} className={'side-link' + (current === g.id ? ' on' : '')} onClick={() => onPick(g.id)}>
-            <span className="dot" style={{ background: g.color }} />{g.name}
+            <span className="dot" style={{ background: groupColor(g) }} />{g.name}
             <span className="count">{g.is_personal ? '自分だけ' : `${g.members.length}人`}</span>
           </button>
         ))}
@@ -220,9 +219,6 @@ export function GroupDrawer({ state, current, onPick, onClose, reload }: {
       {creating ? (
         <div>
           <input type="text" placeholder="例：家族、営業チーム" value={name} onChange={e => setName(e.target.value)} autoFocus />
-          <div className="row" style={{ gap: 10, marginTop: 10 }}>
-            {PALETTE.map(c => <button key={c} className={'swatch' + (color === c ? ' on' : '')} style={{ background: c }} onClick={() => setColor(c)} />)}
-          </div>
           <button className="btn primary block" style={{ marginTop: 12 }} onClick={create} disabled={!name.trim()}>作成して招待リンクを出す</button>
         </div>
       ) : (
@@ -253,7 +249,7 @@ export function MembersPanel({ state, group, onClose, reload, notify, onLeft }: 
   return (
     <Sheet title="メンバー・共有設定" icon="users" onClose={onClose}>
       <div className="label">現在のグループ</div>
-      <div className="row"><span className="dot" style={{ background: group.color }} /><b>{group.name}</b></div>
+      <div className="row"><span className="dot" style={{ background: groupColor(group) }} /><b>{group.name}</b></div>
       {!group.is_personal && (
         <>
           <div className="label">メンバー・{group.members.length}人</div>
@@ -271,10 +267,6 @@ export function MembersPanel({ state, group, onClose, reload, notify, onLeft }: 
         </>
       )}
       <KindsEditor state={state} group={group} reload={reload} notify={notify} />
-      <div className="label">グループの色</div>
-      <div className="row" style={{ gap: 10 }}>
-        {PALETTE.map(c => <button key={c} className={'swatch' + (group.color === c ? ' on' : '')} style={{ background: c }} onClick={() => patch({ color: c })} />)}
-      </div>
       {!group.is_personal && (
         <>
           <div className="label">共有設定</div>

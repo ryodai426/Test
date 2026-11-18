@@ -21,6 +21,8 @@ const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const KINDS = Object.keys(KIND_PRESETS);
 const REMINDERS = ['eve', '60', '30', '10', '5', '0'];
 const EMOJIS = ['👍', '❤️', '💪', '👏'];
+// グループの色（app/lib.ts の MEMBER_COLORS と同じ。黄色＝個人、緑＝共通は使わない）
+const GROUP_COLORS = ['#2BA0FF', '#FF705D', '#A77BEA', '#FF9F43', '#A0522D', '#9AA0A6', '#17B5A6', '#34508F', '#F06292', '#EBC1FF'];
 
 const str = (v: unknown, max = 200) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 
@@ -485,9 +487,12 @@ route('POST', 'groups', async ({ body }) => {
   const u = await requireUser();
   const name = str(body.name, 40);
   if (!name) throw bad('グループ名を入力してください');
+  // 色は選ばずに自動で付ける：その人が入っているグループでまだ使っていない色（app/lib.ts の GROUP_COLORS と同じ並び）
+  const used = (await q<{ color: string }>('SELECT g.color FROM groups g JOIN memberships m ON m.group_id = g.id WHERE m.user_id = $1', [u.id])).map(r => r.color.toUpperCase());
+  const color = GROUP_COLORS.find(c => !used.includes(c)) || GROUP_COLORS[used.length % GROUP_COLORS.length];
   const g = await tx(async c => {
     const g = (await c.query('INSERT INTO groups (name, description, color, owner_id) VALUES ($1,$2,$3,$4) RETURNING id',
-      [name, str(body.description, 200), COLORS.test(body.color) ? body.color : '#2BA0FF', u.id])).rows[0];
+      [name, str(body.description, 200), color, u.id])).rows[0];
     await c.query('INSERT INTO memberships (group_id, user_id) VALUES ($1,$2)', [g.id, u.id]);
     return g;
   });
