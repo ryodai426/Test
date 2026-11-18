@@ -364,19 +364,55 @@ export function SettingsPanel({ state, onClose, notify, reload, onReview }: {
     return () => clearTimeout(id);
   }, [left]);
 
+  const [pushErr, setPushErr] = useState('');
+  const [pushBusy, setPushBusy] = useState(false);
   async function enablePush() {
+    setPushErr('');
+    setPushBusy(true);
+    // どこで失敗したか分かるように、手順ごとに説明を変える
+    let step = '通知の許可';
     try {
       const p = await Notification.requestPermission();
       setPerm(p);
-      if (p !== 'granted') { notify('通知が許可されませんでした'); return; }
-      if (!state.pushKey) { notify('サーバーの通知設定がまだです'); return; }
-      const reg = await sw()!.ready;
-      const s = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8Array(state.pushKey) });
+      if (p !== 'granted') { setPushErr('通知が許可されませんでした'); return; }
+      if (!state.pushKey) { setPushErr('サーバーの通知の鍵がまだ設定されていません'); return; }
+      step = 'アプリの準備';
+      const container = sw();
+      if (!container) throw new Error('Service Worker が使えません');
+      if (!(await container.getRegistration())) await container.register('/sw.js');
+      const reg = await Promise.race([
+        container.ready,
+        new Promise<never>((_, rej) => setTimeout(() => rej(new Error('時間切れ。アプリを閉じて開き直してください')), 10000)),
+      ]);
+      step = '端末の通知の登録';
+      const key = urlB64ToUint8Array(state.pushKey);
+      let s: PushSubscription;
+      try {
+        s = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+      } catch (e) {
+        // 前に別の鍵で登録した名残があると失敗するので、消してからもう一度
+        const old = await reg.pushManager.getSubscription();
+        if (!old) throw e;
+        await old.unsubscribe();
+        s = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+      }
+      step = 'サーバーへの保存';
       await api('push/subscribe', 'POST', { subscription: s.toJSON() });
       setSub(s);
       notify('この端末で通知を受け取ります');
     } catch (e: any) {
-      notify('通知をオンにできませんでした：' + (e.message || e));
+      setPushErr(`${step}で失敗しました：${e?.message || e}`);
+    } finally {
+      setPushBusy(false);
+    }
+  }
+  async function testPush() {
+    try {
+      const r = await api<{ sent: number; devices: number; error: string | null }>('push/test', 'POST');
+      if (r.sent) { notify('テスト通知を送りました'); setPushErr(''); }
+      else setPushErr(r.devices ? `送れませんでした：${r.error || '原因不明'}` : 'この端末の登録がサーバーにありません。オフにしてから、もう一度オンにしてください');
+    } catch (e: any) {
+      setPushErr(e?.message || String(e));
     }
   }
   async function disablePush() {
@@ -427,15 +463,16 @@ export function SettingsPanel({ state, onClose, notify, reload, onReview }: {
       ) : sub ? (
         <div className="row">
           <span className="grow small"><Emoji char="🔔" size={18} /> オン</span>
-          <button className="btn small" onClick={async () => { const r = await api('push/test', 'POST'); notify(r.sent ? 'テスト通知を送りました' : '送れませんでした'); }}>テスト</button>
+          <button className="btn small" onClick={testPush}>テスト</button>
           <button className="btn small" onClick={disablePush}>オフ</button>
         </div>
       ) : (
         <>
-          <button className="btn primary block" onClick={enablePush} disabled={perm === 'denied'}><Emoji char="🔔" size={20} />この端末で通知を受け取る</button>
-          {perm === 'denied' && <div className="small err">ブラウザの設定で通知がブロックされています。サイトの設定から許可してください。</div>}
+          <button className="btn primary block" onClick={enablePush} disabled={perm === 'denied' || pushBusy}><Emoji char="🔔" size={20} />この端末で通知を受け取る</button>
+          {perm === 'denied' && <div className="small err">{ios ? 'iPhone の「設定」→「通知」→「わすれないYO」で通知を許可してください' : 'ブラウザの設定で通知がブロックされています。サイトの設定から許可してください'}</div>}
         </>
       )}
+      {pushErr && <div className="small err" style={{ marginTop: 6, wordBreak: 'break-all' }}>{pushErr}</div>}
 
       <div className="label">キーボード操作</div>
       <div className="small muted" style={{ lineHeight: 2 }}>

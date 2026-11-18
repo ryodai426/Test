@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { q, one, tx, databaseUrl, pool, ready } from '@/lib/db';
 import { consumeLinkCode, createSession, currentUser, destroySession, issueLinkCode, sessionTokenHash, touchSession, type User } from '@/lib/auth';
 import { loadState } from '@/lib/state';
-import { pushEnabled, pushTo, runDueReminders } from '@/lib/notify';
+import { pushEnabled, pushTo, runDueReminders, vapid, vapidProblem } from '@/lib/notify';
 import { KIND_PRESETS, nowIn } from '@/lib/time';
 
 export const dynamic = 'force-dynamic';
@@ -212,7 +212,7 @@ route('GET', 'state', async ({ url }) => {
   if (!st.me) return { me: null };
   await touchSession(st.me.last_used_at);
   const { last_used_at, ...me } = st.me;
-  return { ...st, me, pushKey: pushEnabled() ? process.env.VAPID_PUBLIC_KEY : null, build: process.env.NEXT_PUBLIC_BUILD };
+  return { ...st, me, pushKey: pushEnabled() ? vapid().publicKey : null, build: process.env.NEXT_PUBLIC_BUILD };
 });
 
 // ---- タスク ---------------------------------------------------------------
@@ -585,8 +585,12 @@ route('POST', 'push/unsubscribe', async ({ body }) => {
 
 route('POST', 'push/test', async () => {
   const u = await requireUser();
-  const n = await pushTo(u.id, { title: '🔔 テスト通知', body: 'この端末に通知が届きました', url: '/' });
-  return { sent: n };
+  const problem = vapidProblem();
+  if (problem) throw bad('サーバーの通知の鍵：' + problem);
+  const errors: string[] = [];
+  const n = await pushTo(u.id, { title: '🔔 テスト通知', body: 'この端末に通知が届きました', url: '/' }, errors);
+  const subs = await one<{ n: number }>('SELECT count(*)::int AS n FROM push_subscriptions WHERE user_id = $1', [u.id]);
+  return { sent: n, devices: subs?.n ?? 0, error: errors[0] || null };
 });
 
 // 1分ごとに外部のスケジューラから呼ぶ（README 参照）
@@ -595,8 +599,8 @@ route('GET', 'health', async () => {
   const db = databaseUrl();
   const checks: Record<string, string> = {
     'データベースの接続先': db ? `OK（${db.name}）` : 'NG：DATABASE_URL がありません。Vercel の Storage で Neon を追加し、Redeploy してください',
-    'プッシュ通知の鍵': pushEnabled() ? 'OK' : '未設定：VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY を入れて Redeploy（なくても動きます）',
-    '通知の送り元（VAPID_SUBJECT）': process.env.VAPID_SUBJECT ? 'OK' : '未設定（mailto:メールアドレス）',
+    'プッシュ通知の鍵': vapidProblem() || 'OK',
+    '通知の送り元（VAPID_SUBJECT）': process.env.VAPID_SUBJECT ? `OK（${vapid().subject}）` : '未設定（なくても動きます）',
     '時間どおりの通知の合言葉（CRON_SECRET）': process.env.CRON_SECRET ? 'OK' : '未設定（なくても動きます）',
   };
   if (db) {
