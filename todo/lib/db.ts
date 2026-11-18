@@ -36,14 +36,28 @@ export function pool(): Pool {
  * 初めて使うときに、表（テーブル）を自動で作る。
  * スキーマ（lib/schema.ts）は何度実行しても安全なので、デプロイ後に手作業で SQL を流す必要はない。
  */
+// スキーマの版。lib/schema.ts を変えたら自動で変わる
+const SCHEMA_VERSION = (() => {
+  let h = 0;
+  for (let i = 0; i < SCHEMA_SQL.length; i++) h = (h * 31 + SCHEMA_SQL.charCodeAt(i)) | 0;
+  return String(h >>> 0);
+})();
+
 export function ready(): Promise<void> {
   if (!globalThis.__pgReady) {
     globalThis.__pgReady = (async () => {
+      // すでに最新なら、確認の1往復だけで終わる（毎回すべての表を確かめない）
+      try {
+        const r = await pool().query("SELECT value FROM app_meta WHERE key = 'schema'");
+        if (r.rows[0]?.value === SCHEMA_VERSION) return;
+      } catch { /* まだ表がない＝はじめて */ }
       const c = await pool().connect();
       try {
         await c.query('BEGIN');
         await c.query('SELECT pg_advisory_xact_lock(8124301)'); // 同時に複数のサーバーが作ろうとしても1つずつ
         await c.query(SCHEMA_SQL);
+        await c.query(`INSERT INTO app_meta (key, value) VALUES ('schema', $1)
+                       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [SCHEMA_VERSION]);
         await c.query('COMMIT');
       } catch (e) {
         await c.query('ROLLBACK').catch(() => {});

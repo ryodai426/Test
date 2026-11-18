@@ -17,6 +17,22 @@ export async function createSession(userId: string, device: string): Promise<voi
   });
 }
 
+/** Cookie のログイン情報（ハッシュにしたもの）。なければ null */
+export async function sessionTokenHash(): Promise<string | null> {
+  const token = (await cookies()).get(COOKIE)?.value;
+  return token ? hash(token) : null;
+}
+
+/** 1日1回だけ、ログインの期限を延ばす（書き込みを減らす） */
+export async function touchSession(lastUsedAt: string | Date): Promise<void> {
+  if (Date.now() - new Date(lastUsedAt).getTime() <= 86400000) return;
+  const jar = await cookies();
+  const token = jar.get(COOKIE)?.value;
+  if (!token) return;
+  await q('UPDATE sessions SET last_used_at = now() WHERE token_hash = $1', [hash(token)]);
+  jar.set(COOKIE, token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: MAX_AGE_DAYS * 86400 });
+}
+
 export async function currentUser(): Promise<User | null> {
   const jar = await cookies();
   const token = jar.get(COOKIE)?.value;

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { q, one, tx, databaseUrl, pool, ready } from '@/lib/db';
-import { consumeLinkCode, createSession, currentUser, destroySession, issueLinkCode, type User } from '@/lib/auth';
+import { consumeLinkCode, createSession, currentUser, destroySession, issueLinkCode, sessionTokenHash, touchSession, type User } from '@/lib/auth';
+import { loadState } from '@/lib/state';
 import { pushEnabled, pushTo, runDueReminders } from '@/lib/notify';
 import { KIND_PRESETS, nowIn } from '@/lib/time';
 
@@ -181,58 +182,15 @@ route('PATCH', 'me', async ({ body }) => {
 // ---- 全データ（画面の表示用） -----------------------------------------------
 
 route('GET', 'state', async ({ url }) => {
-  const u = await currentUser();
-  if (!u) return { me: null };
+  const tokenHash = await sessionTokenHash();
+  if (!tokenHash) return { me: null };
   const day = DATE.test(url.searchParams.get('day') || '') ? url.searchParams.get('day') : null;
-
-  const groups = await q(
-    `SELECT g.id, g.name, g.description, g.color, g.is_personal, g.owner_id, g.notify_create, g.notify_done,
-            CASE WHEN g.is_personal THEN null ELSE g.invite_token END AS invite_token,
-            COALESCE(json_agg(json_build_object('id', mu.id, 'name', mu.name) ORDER BY m2.joined_at) FILTER (WHERE mu.id IS NOT NULL), '[]') AS members
-       FROM groups g
-       JOIN memberships m ON m.group_id = g.id AND m.user_id = $1
-       LEFT JOIN memberships m2 ON m2.group_id = g.id
-       LEFT JOIN users mu ON mu.id = m2.user_id
-      GROUP BY g.id ORDER BY g.is_personal DESC, g.created_at`, [u.id]);
-
-  const tasks = await q(
-    `SELECT t.id, t.user_id, t.group_id, t.status, t.title, t.description, t.kind, t.kind_id, t.color,
-            to_char(t.date, 'YYYY-MM-DD') AS date, t.time, t.duration_min, t.reminders, t.remind_all, t.repeat,
-            t.captured_at, t.detailed_at, t.done_at, t.done_by, t.updated_at
-       FROM tasks t JOIN memberships m ON m.group_id = t.group_id AND m.user_id = $1
-      WHERE (t.status = 'ready' OR t.user_id = $1)
-        AND (t.repeat IS NOT NULL OR t.date IS NULL OR t.date >= current_date - 70 OR t.done_at IS NULL)
-      ORDER BY t.date NULLS LAST, t.time NULLS FIRST, t.created_at`, [u.id]);
-  const ids = tasks.map(t => t.id);
-
-  const [done, items, reactions] = ids.length ? await Promise.all([
-    q("SELECT task_id, to_char(occ_date, 'YYYY-MM-DD') AS occ_date, user_id FROM task_done WHERE task_id = ANY($1) AND occ_date >= current_date - 70", [ids]),
-    q('SELECT id, task_id, label, checked, position FROM task_items WHERE task_id = ANY($1) ORDER BY position, label', [ids]),
-    q("SELECT task_id, to_char(occ_date, 'YYYY-MM-DD') AS occ_date, user_id, emoji FROM reactions WHERE task_id = ANY($1) AND occ_date >= current_date - 70", [ids]),
-  ]) : [[], [], []];
-
-  const checklists = await q(
-    `SELECT c.id, c.name, c.trigger, c.show_at, c.weekdays, c.position,
-            COALESCE(json_agg(json_build_object('id', i.id, 'label', i.label, 'checked', cc.item_id IS NOT NULL) ORDER BY i.position) FILTER (WHERE i.id IS NOT NULL), '[]') AS items
-       FROM checklists c
-       LEFT JOIN checklist_items i ON i.checklist_id = c.id
-       LEFT JOIN checklist_checks cc ON cc.item_id = i.id AND cc.day = COALESCE($2::date, current_date)
-      WHERE c.user_id = $1 GROUP BY c.id ORDER BY c.position, c.created_at`, [u.id, day]);
-
-  const kinds = await q(
-    `SELECT k.id, k.group_id, k.name FROM task_kinds k
-       JOIN memberships m ON m.group_id = k.group_id AND m.user_id = $1
-      ORDER BY k.created_at`, [u.id]);
-
-  const notifications = await q(
-    `SELECT n.id, n.kind, n.task_id, to_char(n.occ_date, 'YYYY-MM-DD') AS occ_date, n.body, n.created_at, n.read_at, a.name AS actor
-       FROM notifications n LEFT JOIN users a ON a.id = n.actor_id
-      WHERE n.user_id = $1 ORDER BY n.id DESC LIMIT 40`, [u.id]);
-
-  return {
-    me: u, groups, tasks, done, items, reactions, checklists, notifications, kinds,
-    pushKey: pushEnabled() ? process.env.VAPID_PUBLIC_KEY : null,
-  };
+  // ログインの確認も含めて、1回の問い合わせでまとめて取る（lib/state.ts）
+  const st = await loadState(tokenHash, day);
+  if (!st.me) return { me: null };
+  await touchSession(st.me.last_used_at);
+  const { last_used_at, ...me } = st.me;
+  return { ...st, me, pushKey: pushEnabled() ? process.env.VAPID_PUBLIC_KEY : null };
 });
 
 // ---- タスク ---------------------------------------------------------------
@@ -586,6 +544,14 @@ route('GET', 'health', async () => {
     try {
       await pool().query('SELECT 1');
       checks['データベースにつながるか'] = 'OK';
+      const times: number[] = [];
+      for (let i = 0; i < 3; i++) { const t0 = Date.now(); await pool().query('SELECT 1'); times.push(Date.now() - t0); }
+      const rtt = Math.min(...times);
+      const host = (() => { try { return new URL(db.url).hostname; } catch { return ''; } })();
+      const dbRegion = host.match(/\.([a-z]{2}-[a-z]+-\d)\.aws/)?.[1] || host.match(/\.(aws-[a-z0-9-]+|azure-[a-z0-9-]+)\./)?.[1] || '不明';
+      checks['サーバーの場所（Vercel）'] = process.env.VERCEL_REGION || '不明（手元で実行中）';
+      checks['データベースの場所（Neon）'] = dbRegion;
+      checks['サーバー⇔DBの1往復'] = `${rtt}ms${rtt > 80 ? '（遠いです。Vercel の Settings → Functions → Function Region を、データベースの場所に近い地域にすると速くなります）' : '（十分速いです）'}`;
       try {
         await ready();
         const r = await pool().query("SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema = 'public'");

@@ -1,5 +1,9 @@
 import type { Metadata, Viewport } from 'next';
+import { Noto_Sans_JP } from 'next/font/google';
 import './globals.css';
+
+// フォントはアプリと同じ場所から配る（別のサーバーへの接続と、表示の待ちをなくす）
+const noto = Noto_Sans_JP({ weight: ['600', '700'], subsets: ['latin'], display: 'swap', variable: '--font-noto' });
 
 export const metadata: Metadata = {
   title: 'わすれないYO',
@@ -19,13 +23,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ja">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
-        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@600;700&display=swap" />
-      </head>
+    <html lang="ja" className={noto.variable}>
       <body>{children}</body>
     </html>
   );
