@@ -468,3 +468,42 @@ b, strong { font-weight: var(--w-head); }
 
 .review .scene { max-height: 14vh; }
 @media (max-width: 899px) { .review .scene { max-height: 10vh; } }
+
+/* ---- タイムスケジュール：なぞって時間を選ぶ ---- */
+.selectable { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.sel-range { position: absolute; left: 2px; right: 2px; background: rgba(142, 212, 98, .35); border: 2px solid var(--green); border-radius: 10px; z-index: 3; pointer-events: none; display: flex; align-items: flex-start; justify-content: center; }
+.sel-range span { margin-top: 4px; background: var(--ink); color: #fff; font-size: 12px; padding: 3px 9px; border-radius: 999px; white-space: nowrap; box-shadow: 0 4px 10px rgba(44, 46, 42, .2); }
+
+/* ---- メモの数：赤い丸で強調 ---- */
+.memo-badge { margin-left: auto; min-width: 22px; height: 22px; padding: 0 7px; border-radius: 11px; background: #E5322D; color: #fff; font-size: 12.5px; display: inline-flex; align-items: center; justify-content: center; font-weight: var(--w-head); box-shadow: 0 0 0 3px rgba(229, 50, 45, .18); animation: memo-pulse 2.4s ease-in-out infinite; }
+.badge.memo-badge-sm { background: #E5322D; color: #fff; animation: memo-pulse 2.4s ease-in-out infinite; }
+@keyframes memo-pulse { 0%, 100% { box-shadow: 0 0 0 2px var(--card), 0 0 0 3px rgba(229, 50, 45, .0); } 50% { box-shadow: 0 0 0 2px var(--card), 0 0 0 7px rgba(229, 50, 45, .22); } }
+
+/* ---- お知らせの「今日の振り返り」 ---- */
+.notice-review { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: var(--yellow); border-radius: 16px; padding: 12px 14px; margin: 8px 0 6px; border-bottom: 0; }
+.notice-review .grow { display: flex; flex-direction: column; gap: 2px; }
+.notice-review.unread b::after { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #E5322D; margin-left: 6px; vertical-align: 2px; }
+.sticky.memos { background: var(--card); box-shadow: 0 12px 26px rgba(44, 46, 42, .16), inset 0 0 0 2.5px #E5322D; }
+
+/* ---- 買い物リスト ---- */
+.shop-card h4 { font-size: 17px; }
+.shop-tools { margin: 10px 0 4px; }
+.shop-aisle { margin-top: 8px; }
+.shop-aisle-name { font-size: 11.5px; color: var(--sub); padding: 6px 2px 2px; border-bottom: 1.5px solid rgba(44, 46, 42, .08); }
+.shop-card .li { cursor: pointer; }
+.qty { display: inline-block; margin-left: 8px; padding: 0 7px; border-radius: 8px; background: var(--card); font-size: 12px; color: var(--ink); vertical-align: 1px; }
+.checked-by { display: inline-block; margin-left: 8px; font-size: 11px; color: var(--sub); }
+.shop-done-toggle { margin-top: 8px; font-size: 12.5px; color: var(--sub); padding: 4px 2px; }
+.shop-suggest { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
+.shop-suggest .chip { padding: 5px 10px; font-size: 13px; border-color: transparent; }
+.shop-mode .items { gap: 0; }
+.shop-mode .shop-aisle-name { color: var(--ink); border-color: rgba(44, 46, 42, .15); margin-top: 10px; font-size: 13px; }
+.shop-big { display: flex; align-items: center; gap: 14px; padding: 15px 16px; border-radius: 18px; background: var(--card); font-size: 18px; margin-top: 8px; cursor: pointer; transition: transform .12s, opacity .15s; }
+.shop-big:active { transform: scale(.98); }
+.shop-big.on { opacity: .55; }
+.shop-big.on .grow { text-decoration: line-through; }
+.shop-big .box { width: 30px; height: 30px; border-radius: 50%; }
+.shop-add { display: flex; gap: 8px; }
+.shop-add input { border-color: transparent; }
+.shop-mode { padding-bottom: calc(16px + var(--safe-b)); }
+.shop-mode .foot { padding-bottom: 0; }

@@ -99,6 +99,17 @@ export async function runDueReminders(now = Date.now()): Promise<{ sent: number 
     }
   }
 
+  // ②' メモがたまっていたら、お昼の12時に1回お知らせ
+  const memoUsers = await q<{ id: string; tz: string; n: number }>(
+    `SELECT u.id, u.tz, count(t.id)::int AS n FROM users u JOIN tasks t ON t.user_id = u.id AND t.status = 'draft' GROUP BY u.id`);
+  for (const mu of memoUsers) {
+    const { date } = nowIn(mu.tz, new Date(now));
+    const at = zonedToUtc(date, '12:00', mu.tz);
+    if (at > now || at < windowStart) continue;
+    if (!(await claim(`memos:${mu.id}:${date}`))) continue;
+    sent += await pushTo(mu.id, { title: '📋 メモがたまっています', body: `貼ったままのメモが${mu.n}枚あります。見ておきますか？`, url: '/?memos=1', tag: `memos-${date}` });
+  }
+
   // ③' 夜20時に「今日の振り返り」（スキップにしていない人だけ）
   const reviewers = await q<{ id: string; tz: string }>('SELECT id, tz FROM users WHERE NOT review_skip');
   for (const r of reviewers) {

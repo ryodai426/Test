@@ -14,7 +14,7 @@ export type Task = {
 };
 export type Kind = { id: string; group_id: string; name: string };
 export type Followup = { task_id: string; occ_date: string; state: 'snoozed' | 'held'; next_at: string | null; snooze_count: number };
-export type Item = { id: string; task_id: string; label: string; checked: boolean; position: number };
+export type Item = { id: string; task_id: string; label: string; checked: boolean; position: number; checked_by?: string | null };
 export type Checklist = {
   id: string; name: string; trigger: 'time' | 'after_shopping' | 'manual'; show_at: string | null; weekdays: number[];
   position: number; items: { id: string; label: string; checked: boolean }[];

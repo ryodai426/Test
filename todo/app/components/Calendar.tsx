@@ -36,13 +36,89 @@ type Props = {
   today: string;
   groupFilter: string;
   onOpen: (o: Occ) => void;
-  onNew: (day: string, time?: string) => void;
+  onNew: (day: string, time?: string, duration?: number) => void;
   onToggle: (o: Occ) => void;
   onPickDay: (day: string) => void;
   who?: string; // 誰の予定を出すか（省略＝自分）
 };
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
+
+/**
+ * 空いている欄をなぞって、30分刻みで時間を選ぶ。
+ * スマホ：長押し（0.35秒）してから上下になぞる。PC：押したまま上下に動かす。端まで行くと自動でスクロール。
+ * 軽く押しただけなら、押した位置から1時間。
+ */
+function useRangeSelect(minuteAt: (y: number, height: number) => number, lo: number, hi: number, onPick: (s: number, e: number) => void) {
+  const colRef = useRef<HTMLDivElement>(null);
+  const [sel, setSel] = useState<{ a: number; b: number } | null>(null);
+  const st = useRef<{ id: number; x: number; y: number; type: string; timer: ReturnType<typeof setTimeout> | null; active: boolean; a: number; b: number } | null>(null);
+  const snap = (m: number) => Math.min(hi - 30, Math.max(lo, Math.floor(m / 30) * 30));
+  const minAt = (clientY: number) => {
+    const r = colRef.current!.getBoundingClientRect();
+    return snap(minuteAt(clientY - r.top, r.height));
+  };
+  // なぞっている間は、画面がスクロールしないようにする（iPhone 対策）
+  useEffect(() => {
+    const el = colRef.current;
+    if (!el) return;
+    const tm = (e: TouchEvent) => { if (st.current?.active) e.preventDefault(); };
+    const cm = (e: Event) => { if (st.current) e.preventDefault(); }; // 長押しのメニューを出さない
+    el.addEventListener('touchmove', tm, { passive: false });
+    el.addEventListener('contextmenu', cm);
+    return () => { el.removeEventListener('touchmove', tm); el.removeEventListener('contextmenu', cm); };
+  }, []);
+  const autoScroll = (clientY: number) => {
+    const box = colRef.current?.closest('.content') as HTMLElement | null;
+    if (!box) return;
+    const r = box.getBoundingClientRect();
+    if (clientY < r.top + 48) box.scrollBy(0, -14);
+    else if (clientY > r.bottom - 48) box.scrollBy(0, 14);
+  };
+  const handlers = {
+    onPointerDown: (e: React.PointerEvent) => {
+      if (!(e.target as HTMLElement).classList.contains('slot') || e.button > 0) return;
+      const a = minAt(e.clientY);
+      const s = { id: e.pointerId, x: e.clientX, y: e.clientY, type: e.pointerType, timer: null as ReturnType<typeof setTimeout> | null, active: false, a, b: a };
+      if (e.pointerType !== 'mouse') {
+        s.timer = setTimeout(() => { s.active = true; setSel({ a, b: a }); navigator.vibrate?.(12); }, 350);
+      }
+      st.current = s;
+    },
+    onPointerMove: (e: React.PointerEvent) => {
+      const s = st.current;
+      if (!s || e.pointerId !== s.id) return;
+      if (!s.active) {
+        const dist = Math.abs(e.clientY - s.y) + Math.abs(e.clientX - s.x);
+        if (dist < 8) return;
+        if (s.type !== 'mouse') { if (s.timer) clearTimeout(s.timer); st.current = null; return; } // スクロールしたいだけ
+        s.active = true;
+        (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+      }
+      s.b = minAt(e.clientY);
+      setSel({ a: s.a, b: s.b });
+      autoScroll(e.clientY);
+    },
+    onPointerUp: (e: React.PointerEvent) => {
+      const s = st.current;
+      if (!s || e.pointerId !== s.id) return;
+      if (s.timer) clearTimeout(s.timer);
+      st.current = null;
+      setSel(null);
+      if (s.active) onPick(Math.min(s.a, s.b), Math.max(s.a, s.b) + 30);
+      else onPick(s.a, Math.min(hi, s.a + 60));
+    },
+    onPointerCancel: () => { if (st.current?.timer) clearTimeout(st.current.timer); st.current = null; setSel(null); },
+  };
+  const range = sel ? { s: Math.min(sel.a, sel.b), e: Math.max(sel.a, sel.b) + 30 } : null;
+  return { colRef, handlers, range };
+}
+
+function rangeLabel(s: number, e: number) {
+  const d = e - s;
+  const len = d < 60 ? `${d}分` : d % 60 ? `${Math.floor(d / 60)}時間${d % 60}分` : `${d / 60}時間`;
+  return `${fromMin(s)}–${e >= 1440 ? '24:00' : fromMin(e)}・${len}`;
+}
 
 function useNowMin() {
   const [m, setM] = useState(() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); });
@@ -97,14 +173,20 @@ function laneLayout(spans: Span[]) {
 
 function TimedColumn({ day, list, isToday, nowMin, onOpen, onNew, onToggle, compact, state }: {
   day: string; list: Occ[]; isToday: boolean; nowMin: number; compact?: boolean; state: State;
-  onOpen: (o: Occ) => void; onNew: (day: string, time?: string) => void; onToggle: (o: Occ) => void;
+  onOpen: (o: Occ) => void; onNew: (day: string, time?: string, duration?: number) => void; onToggle: (o: Occ) => void;
 }) {
   const hourPx = 56;
+  const { colRef, handlers, range } = useRangeSelect(y => (y / hourPx) * 60, 0, 1440, (s, e) => onNew(day, fromMin(s), e - s));
   return (
-    <div className="col">
+    <div className="col selectable" ref={colRef} {...handlers}>
       {HOURS.map(h => (
-        <div key={h} className="slot" onClick={() => onNew(day, fromMin(h * 60))} title={`${h}:00 に予定を追加`} />
+        <div key={h} className="slot" title={`${h}:00 に予定を追加（長押しでなぞると時間を選べます）`} />
       ))}
+      {range && (
+        <div className="sel-range" style={{ top: (range.s / 60) * hourPx, height: ((range.e - range.s) / 60) * hourPx }}>
+          <span>{rangeLabel(range.s, range.e)}</span>
+        </div>
+      )}
       {layout(list).map(({ o, s, e, lane, lanes }) => (
         <div key={o.task.id + o.day} role="button" tabIndex={0} className={'ev has-check' + (o.done ? ' done' : '') + (compact ? ' compact' : '')}
           style={{
@@ -179,6 +261,7 @@ function HalfDay({ base, list, p, nowMin }: { base: number; list: Occ[]; p: Prop
   const end = base + 720;
   const pct = (m: number) => ((m - base) / 720) * 100;
   const isToday = p.cursor === p.today;
+  const { colRef, handlers, range } = useRangeSelect((y, h) => base + (y / h) * 720, base, end, (s, e) => p.onNew(p.cursor, fromMin(s), e - s));
   return (
     <section className="half" aria-label={base ? '午後' : '午前'}>
       <div className="half-head">{base ? '午後' : '午前'}<span>{base ? '12:00 – 24:00' : '0:00 – 12:00'}</span></div>
@@ -186,10 +269,15 @@ function HalfDay({ base, list, p, nowMin }: { base: number; list: Occ[]; p: Prop
         <div className="half-times">
           {HALF_HOURS.map(h => <div key={h}>{`${base / 60 + h}:00`}</div>)}
         </div>
-        <div className="half-col">
+        <div className="half-col selectable" ref={colRef} {...handlers}>
           {HALF_HOURS.map(h => (
-            <div key={h} className="slot" onClick={() => p.onNew(p.cursor, fromMin(base + h * 60))} title={`${base / 60 + h}:00 に予定を追加`} />
+            <div key={h} className="slot" title={`${base / 60 + h}:00 に予定を追加（押したまま動かすと時間を選べます）`} />
           ))}
+          {range && (
+            <div className="sel-range" style={{ top: `${pct(range.s)}%`, height: `${pct(range.e) - pct(range.s)}%` }}>
+              <span>{rangeLabel(range.s, range.e)}</span>
+            </div>
+          )}
           {layoutRange(list, base, end).map(({ o, s, e, lane, lanes }) => (
             <div key={o.task.id + o.day} role="button" tabIndex={0} className={'ev ev-half has-check' + (o.done ? ' done' : '')}
               style={{

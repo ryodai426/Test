@@ -8,16 +8,17 @@ import Emoji, { EmojiText } from './components/Emoji';
 import TodayBrief from './components/TodayBrief';
 import MemberStrip, { MemberFocus } from './components/Members';
 import { Review, ReviewPrompt } from './components/Review';
+import { ShoppingPanel } from './components/Shopping';
 import MemoBoard from './components/MemoBoard';
 import { DayView, MonthView, WeekView, periodLabel } from './components/Calendar';
 import TaskEditor, { type EditorInit } from './components/TaskEditor';
 import {
-  ChecklistPanel, FullChecklist, GroupDrawer, MembersPanel, NoticePanel, SettingsPanel, ShoppingPanel, checklistDue,
+  ChecklistPanel, FullChecklist, GroupDrawer, MembersPanel, NoticePanel, SettingsPanel, checklistDue,
 } from './components/Panels';
 
 type View = 'day' | 'week' | 'month';
 type Panel = null | 'drafts' | 'shopping' | 'checklists' | 'groups' | 'members' | 'settings' | 'notices';
-type Sticky = { key: string; kind: 'done' | 'created' | 'reaction' | 'draft'; body: string; taskId?: string | null; occDate?: string | null; noticeId?: number };
+type Sticky = { key: string; kind: 'done' | 'created' | 'reaction' | 'draft' | 'memos'; body: string; taskId?: string | null; occDate?: string | null; noticeId?: number };
 
 const LS = {
   get: (k: string) => { try { return localStorage.getItem(k); } catch { return null; } },
@@ -43,6 +44,9 @@ export default function App() {
   const [memoBoard, setMemoBoard] = useState(false);
   const [review, setReview] = useState(false); // 今日の振り返り
   const [reviewAsk, setReviewAsk] = useState(false); // 「振り返りを見ますか？」
+  // 今日の振り返りを見たか（お知らせの未読の数に入れる）
+  const [reviewSeen, setReviewSeen] = useState(false);
+  useEffect(() => { if (review && state?.me) { LS.set(`review-seen:${state.me.id}:${localToday()}`, '1'); setReviewSeen(true); } }, [review, state?.me?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   // 「完了しましたか？」の順番待ち（1つずつ聞く）
   const [confirms, setConfirms] = useState<{ taskId: string; day: string }[]>([]);
   const enqueueConfirm = useCallback((taskId: string, day: string) => {
@@ -131,6 +135,7 @@ export default function App() {
     const edit = p.get('edit');
     if (edit) { const t = s.tasks.find(x => x.id === edit); if (t) setEditor({ task: t }); }
     if (p.get('review')) setReview(true);
+    if (p.get('memos')) setMemoBoard(true);
     const cf = p.get('confirm');
     if (cf && s.tasks.some(x => x.id === cf)) enqueueConfirm(cf, p.get('day') || localToday());
     const cl = p.get('checklist');
@@ -271,12 +276,23 @@ export default function App() {
     setBrief(true);
   }, [meId, today]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ---- メモがたまっていたら、お昼以降に開いたとき1日1回、付箋でお知らせ ----
+  useEffect(() => {
+    if (!state?.me || brief) return;
+    const n = state.tasks.filter(t => t.status === 'draft' && t.user_id === state.me!.id).length;
+    if (!n || new Date().getHours() < 12) return;
+    const key = `memo-digest:${state.me.id}:${localToday()}`;
+    if (LS.get(key)) return;
+    LS.set(key, '1');
+    setStickies(xs => [...xs, { key, kind: 'memos' as const, body: `貼ったままのメモが${n}枚あります` }].slice(-4));
+  }, [state, brief]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ---- 夕方に開いたら「今日の振り返りを見ますか？」（その日1回だけ。スキップ設定なら出さない） ----
   // ※ アプリを閉じる瞬間に画面を出すことは、ブラウザの仕組み上できないため、夕方以降に開いたときに聞く
   useEffect(() => {
     if (!state?.me || state.me.review_skip || brief || review) return;
     const check = () => {
-      if (new Date().getHours() < 18) return;
+      if (new Date().getHours() < 17) return;
       const key = `review-asked:${state.me!.id}:${localToday()}`;
       if (LS.get(key)) return;
       LS.set(key, '1');
@@ -328,7 +344,8 @@ export default function App() {
   const currentGroup = state.groups.find(g => g.id === groupFilter);
   const drafts = state.tasks.filter(t => t.status === 'draft' && t.user_id === me.id);
   const shoppingOpen = state.tasks.filter(t => t.kind === 'shopping' && t.status === 'ready' && !t.done_at && isFor(t, me.id, state) && (groupFilter === 'all' || t.group_id === groupFilter));
-  const unread = state.notifications.filter(n => !n.read_at).length;
+  const reviewUnread = new Date().getHours() >= 17 && !reviewSeen && !LS.get(`review-seen:${me.id}:${today}`) ? 1 : 0;
+  const unread = state.notifications.filter(n => !n.read_at).length + reviewUnread;
   const someday = state.tasks.filter(t => t.status === 'ready' && !t.date && !t.done_at && t.kind !== 'shopping' && isFor(t, me.id, state) && (groupFilter === 'all' || t.group_id === groupFilter));
   // グループ（共有）を選んでいるときは、メンバーのアイコンを押して、その人の予定を見られる
   const sharedGroup = currentGroup && !currentGroup.is_personal ? currentGroup : null;
@@ -374,7 +391,7 @@ export default function App() {
     state, cursor, today, groupFilter, who,
     onOpen: (o: Occ) => setEditor({ task: o.task, occDay: o.day }),
     // 他のメンバーの予定を見ているときに空き枠を押したら、その人あての予定として入れる
-    onNew: (day: string, time?: string) => setEditor({ day, time, groupId: groupFilter !== 'all' ? groupFilter : undefined, assignees: whoName ? [who] : undefined }),
+    onNew: (day: string, time?: string, duration?: number) => setEditor({ day, time, duration, groupId: groupFilter !== 'all' ? groupFilter : undefined, assignees: whoName ? [who] : undefined }),
     onToggle: toggleDone,
     onPickDay: (d: string) => { setCursor(d); setView('day'); },
   };
@@ -402,7 +419,7 @@ export default function App() {
         </div>
         <button className="btn primary block big" onClick={() => setEditor({ day: cursor, groupId: groupFilter !== 'all' ? groupFilter : undefined })}>予定・タスクを追加<span className="orb"><Icon name="plus" size={20} stroke={2.4} /></span></button>
         <div style={{ height: 8 }} />
-        <button className="side-link" onClick={() => setMemoBoard(true)}><Icon name="memo" size={19} />メモを見る {drafts.length > 0 && <span className="count">{drafts.length}</span>}</button>
+        <button className="side-link" onClick={() => setMemoBoard(true)}><Icon name="memo" size={19} />メモを見る {drafts.length > 0 && <span className="memo-badge" aria-label={`メモ${drafts.length}枚`}>{drafts.length}</span>}</button>
         <button className="side-link" onClick={() => setPanel('shopping')}><Icon name="cart" size={19} />買い物リスト <span className="count">{shoppingOpen.length || ''}</span></button>
         <button className="side-link" onClick={() => setPanel('checklists')}><Icon name="pack" size={19} />持ち物チェック</button>
         <button className="side-link" onClick={() => setReview(true)}><Icon name="check" size={19} />今日の振り返り</button>
@@ -485,7 +502,7 @@ export default function App() {
 
         {/* ---------- スマホ：下のボタン ---------- */}
         <nav className="bottombar">
-          <button onClick={() => setMemoBoard(true)}><span className="i"><Icon name="memo" /></span>メモ{drafts.length > 0 && <span className="badge">{drafts.length}</span>}</button>
+          <button onClick={() => setMemoBoard(true)}><span className="i"><Icon name="memo" /></span>メモ{drafts.length > 0 && <span className="badge memo-badge-sm">{drafts.length}</span>}</button>
           <button onClick={() => setPanel('shopping')}><span className="i"><Icon name="cart" /></span>買い物</button>
           <button className="capture-btn" onClick={openCapture} aria-label="ひとことメモ"><span className="i"><Icon name="plus" size={28} stroke={2.6} /></span>メモ</button>
           <button onClick={() => setPanel('checklists')}><span className="i"><Icon name="pack" /></span>持ち物</button>
@@ -525,7 +542,8 @@ export default function App() {
       {panel === 'members' && currentGroup && <MembersPanel key={currentGroup.id} state={state} group={currentGroup} onClose={() => setPanel(null)} reload={load} notify={notify} onLeft={() => { setPanel(null); setGroupFilter('all'); load(); }} />}
       {panel === 'settings' && <SettingsPanel state={state} onClose={() => setPanel(null)} notify={notify} reload={load}
         onReview={() => { setPanel(null); setReview(true); }} />}
-      {panel === 'notices' && <NoticePanel state={state} onClose={() => { setPanel(null); load(); }} />}
+      {panel === 'notices' && <NoticePanel state={state} onClose={() => { setPanel(null); load(); }}
+        reviewSeen={!reviewUnread} onReview={() => { setPanel(null); setReview(true); }} />}
       {brief && <TodayBrief state={state} today={today} onClose={() => setBrief(false)} />}
       {review && <Review state={state} today={today} onClose={() => setReview(false)} reload={load} />}
       {reviewAsk && !review && !brief && (
@@ -577,7 +595,7 @@ export default function App() {
         {stickies.map(s => (
           <div key={s.key} className={'sticky ' + s.kind}>
             <button className="x" onClick={() => dismiss(s.key)} aria-label="閉じる">×</button>
-            <div style={{ paddingRight: 16 }}><span className="sticky-ico"><Emoji char={s.kind === 'done' ? '🎉' : s.kind === 'created' ? '✨' : s.kind === 'draft' ? '📋' : '💬'} size={22} /></span><EmojiText text={s.body} /></div>
+            <div style={{ paddingRight: 16 }}><span className="sticky-ico"><Emoji char={s.kind === 'done' ? '🎉' : s.kind === 'created' ? '✨' : s.kind === 'draft' || s.kind === 'memos' ? '📋' : '💬'} size={22} /></span><EmojiText text={s.body} /></div>
             {s.kind === 'done' && s.taskId && (
               <div className="emojis">
                 {['👍', '❤️', '💪', '👏'].map(em => (
@@ -588,6 +606,9 @@ export default function App() {
                   }} aria-label={em}><Emoji char={em} size={24} /></button>
                 ))}
               </div>
+            )}
+            {s.kind === 'memos' && (
+              <button className="btn small" style={{ marginTop: 8 }} onClick={() => { dismiss(s.key); setMemoBoard(true); }}>メモを見る</button>
             )}
             {(s.kind === 'created' || s.kind === 'draft') && s.taskId && (
               <button className="btn small" style={{ marginTop: 8 }} onClick={() => {

@@ -22,94 +22,6 @@ function Sheet({ title, icon, onClose, children, foot, side = true }: { title: s
 
 // ---------------------------------------------------------------- 買い物リスト
 
-export function ShoppingPanel({ state, groupFilter, onClose, reload, onShoppingDone, notify }: {
-  state: State; groupFilter: string; onClose: () => void; reload: () => Promise<void> | void;
-  onShoppingDone: () => void; notify: (m: string) => void;
-}) {
-  const groups = new Map(state.groups.map(g => [g.id, g]));
-  const lists = state.tasks.filter(t => t.kind === 'shopping' && t.status === 'ready' && isFor(t, state.me!.id, state) && (groupFilter === 'all' || t.group_id === groupFilter));
-  const open = lists.filter(t => !t.done_at);
-  const done = lists.filter(t => t.done_at).slice(0, 5);
-  const [newName, setNewName] = useState('');
-  const [newGroup, setNewGroup] = useState(groupFilter !== 'all' ? groupFilter : state.groups.find(g => g.is_personal)!.id);
-  const [texts, setTexts] = useState<Record<string, string>>({});
-
-  async function toggle(id: string, checked: boolean) {
-    const r = await api<{ completed: boolean }>(`items/${id}`, 'PATCH', { checked });
-    await reload();
-    if (r.completed) { notify('全部そろいました！ 買い物完了 🎉'); onShoppingDone(); }
-  }
-  async function add(taskId: string) {
-    const labels = (texts[taskId] || '').split(/[、,\n]/).map(s => s.trim()).filter(Boolean);
-    if (!labels.length) return;
-    setTexts(x => ({ ...x, [taskId]: '' }));
-    await api(`tasks/${taskId}/items`, 'POST', { labels });
-    reload();
-  }
-  async function create() {
-    if (!newName.trim()) return;
-    // 買い物リストは家族などで一緒に使うので、グループでは「共通（全員）」で作る
-    await api('tasks', 'POST', { title: newName, kind: 'shopping', group_id: newGroup, date: null, assignees: 'all' });
-    setNewName('');
-    reload();
-  }
-
-  const renderList = (t: Task) => {
-    const g = groups.get(t.group_id);
-    const items = state.items.filter(i => i.task_id === t.id);
-    const left = items.filter(i => !i.checked).length;
-    return (
-      <div key={t.id} className="card" style={{ borderLeft: `4px solid ${t.color || g?.color}` }}>
-        <div className="row">
-          <h4>{t.title}</h4>
-          <span className="small muted">{t.done_at ? '完了' : `残り${left}`}{g && !g.is_personal ? ` ・${g.name}` : ''}</span>
-        </div>
-        {t.date && <div className="small muted">{fmtJpDate(t.date)}{t.time ? ` ${t.time}` : ''}</div>}
-        <div style={{ marginTop: 6 }}>
-          {[...items].sort((a, b) => Number(a.checked) - Number(b.checked) || a.position - b.position).map(i => (
-            <div key={i.id} className={'li' + (i.checked ? ' on' : '')}>
-              <button className={'box' + (i.checked ? ' on' : '')} onClick={() => toggle(i.id, !i.checked)} aria-label="チェック">{i.checked && <Icon name="check" size={15} stroke={2.6} />}</button>
-              <span className="grow" onClick={() => toggle(i.id, !i.checked)}>{i.label}</span>
-              <button className="del" onClick={async () => { await api(`items/${i.id}`, 'DELETE'); reload(); }} aria-label="削除">×</button>
-            </div>
-          ))}
-        </div>
-        {!t.done_at && (
-          <div className="row" style={{ marginTop: 6 }}>
-            <input type="text" placeholder="品目を追加（読点で区切って複数）" value={texts[t.id] || ''}
-              onChange={e => setTexts(x => ({ ...x, [t.id]: e.target.value }))}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) add(t.id); }} />
-            <button className="btn small" onClick={() => add(t.id)}>追加</button>
-          </div>
-        )}
-        {t.done_at && <button className="btn small" style={{ marginTop: 8 }} onClick={async () => { await api(`tasks/${t.id}`, 'DELETE'); reload(); }}>このリストを消す</button>}
-      </div>
-    );
-  };
-
-  return (
-    <Sheet title="買い物リスト" icon="cart" onClose={onClose}>
-      {open.length === 0 && <div className="empty">買い物リストはありません</div>}
-      {open.map(renderList)}
-      <div className="card soft">
-        <div className="small" style={{ marginBottom: 8 }}>＋ 新しい買い物リスト</div>
-        <input type="text" placeholder="例：今日の買い物、週末の買い物" value={newName} onChange={e => setNewName(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) create(); }} />
-        <div className="row wrap" style={{ marginTop: 8 }}>
-          {state.groups.map(g => (
-            <button key={g.id} className={'chip' + (g.id === newGroup ? ' on' : '')} onClick={() => setNewGroup(g.id)}>
-              <span className="dot" style={{ background: g.color, marginRight: 6 }} />{g.name}
-            </button>
-          ))}
-        </div>
-        <button className="btn primary block" style={{ marginTop: 10 }} onClick={create} disabled={!newName.trim()}>作成</button>
-      </div>
-      {done.length > 0 && <div className="label">最近おわった買い物</div>}
-      {done.map(renderList)}
-    </Sheet>
-  );
-}
-
 // ---------------------------------------------------------------- 持ち物チェックリスト
 
 export function checklistDue(c: Checklist, now = new Date()): boolean {
@@ -472,7 +384,7 @@ export function SettingsPanel({ state, onClose, notify, reload, onReview }: {
           notify(e.target.checked ? '夕方に振り返りを聞きます' : '振り返りの案内をスキップします');
           reload();
         }} />
-        <span className="grow">夕方（18時以降）に開いたとき、振り返りを見るか聞く</span>
+        <span className="grow">夕方（17時以降）に開いたとき、振り返りを見るか聞く</span>
       </label>
 
       <div className="label">この端末以外でも使う（スマホ ⇄ 会社のPC）</div>
@@ -524,11 +436,20 @@ export function SettingsPanel({ state, onClose, notify, reload, onReview }: {
 
 // ---------------------------------------------------------------- お知らせ履歴
 
-export function NoticePanel({ state, onClose }: { state: State; onClose: () => void }) {
+export function NoticePanel({ state, onClose, onReview, reviewSeen }: { state: State; onClose: () => void; onReview: () => void; reviewSeen: boolean }) {
   useEffect(() => { api('notifications/read', 'POST', {}).catch(() => {}); }, []);
+  const evening = new Date().getHours() >= 17;
   return (
     <Sheet title="お知らせ" icon="bell" onClose={onClose}>
-      {state.notifications.length === 0 && <div className="empty">お知らせはまだありません</div>}
+      {/* 17時から日付が変わるまで、いつでも今日の振り返りを開ける */}
+      {evening && (
+        <button className={'notice notice-review' + (reviewSeen ? '' : ' unread')} onClick={onReview}>
+          <Emoji char="🎉" size={22} />
+          <span className="grow"><b>今日の振り返り</b><span className="small muted">今日こなしたタスクと明日の予定を見る（日付が変わるまで）</span></span>
+          <Icon name="right" size={18} />
+        </button>
+      )}
+      {state.notifications.length === 0 && !evening && <div className="empty">お知らせはまだありません</div>}
       {state.notifications.map(n => (
         <div key={n.id} className={'notice' + (n.read_at ? '' : ' unread')}>
           <div><Emoji char={n.kind === 'done' ? '🎉' : n.kind === 'created' ? '✨' : '💬'} size={18} /> <EmojiText text={n.body} /></div>

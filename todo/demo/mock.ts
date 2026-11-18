@@ -32,6 +32,9 @@ function task(p: Any): Any {
 
 const shop1 = task({ group_id: 'gf', user_id: 'u4', title: '今日の買い物', kind: 'shopping' });
 const shop2 = task({ title: '週末キャンプの買い出し', kind: 'shopping', date: addDays(sat, -1) });
+// 前に終わった買い物（「よく買うもの」の元になる）
+const shopOld1 = task({ group_id: 'gf', user_id: 'u4', title: '先週の買い物', kind: 'shopping', done_at: ago(60 * 24 * 5), done_by: 'u4' });
+const shopOld2 = task({ group_id: 'gf', user_id: 'u4', title: 'まとめ買い', kind: 'shopping', done_at: ago(60 * 24 * 12), done_by: 'me' });
 // デモを開いた時刻に合わせて「今やっていること」が出るように
 const H = new Date().getHours();
 const hh = (h: number) => `${String(Math.max(0, Math.min(23, h))).padStart(2, '0')}:00`;
@@ -40,7 +43,7 @@ const review = task({ group_id: 'gw', user_id: 'u3', assignees: ['u3', 'me'], ti
 const duty = task({ group_id: 'gw', assignees: ['me'], title: '朝当番', kind: 'duty', date: mon, time: '08:00', duration_min: 30, repeat: { freq: 'weekly', interval: 1, weekdays: [1, 4], monthMode: 'day', until: null } });
 
 const tasks: Any[] = [
-  duty, report, review, shop1, shop2,
+  duty, report, review, shop1, shop2, shopOld1, shopOld2,
   task({ group_id: 'gw', starred: true, title: '定例会議', kind: 'meeting', date: mon, time: '10:00', description: '営業部との定例', repeat: { freq: 'weekly', interval: 1, weekdays: [1, 3], monthMode: 'day', until: null } }),
   task({ group_id: 'gf', user_id: 'u4', title: 'ゴミ出し', kind: 'duty', date: mon, time: '07:30', duration_min: 15, remind_all: true, repeat: { freq: 'weekly', interval: 1, weekdays: [2, 5], monthMode: 'day', until: null } }),
   task({ title: '歯医者', kind: 'reminder', date: addDays(T, 1), time: '18:30' }),
@@ -65,7 +68,9 @@ const done: Any[] = [];
 for (let d = mon; d < T; d = addDays(d, 1)) if ([1, 4].includes(weekday(d))) done.push({ task_id: duty.id, occ_date: d, user_id: 'me' });
 
 const items: Any[] = [
-  ...['小麦粉', '卵', '牛乳', '玉ねぎ'].map((label, i) => ({ id: id(), task_id: shop1.id, label, checked: label === '牛乳', position: i })),
+  ...['小麦粉', '卵 2パック', '牛乳', '玉ねぎ 3個', '豚こま肉', 'トイレットペーパー', '納豆'].map((label, i) => ({ id: id(), task_id: shop1.id, label, checked: label === '牛乳', checked_by: label === '牛乳' ? 'u4' : null, position: i })),
+  ...['牛乳', '卵', '食パン', 'バナナ', 'ヨーグルト', 'トイレットペーパー'].map((label, i) => ({ id: id(), task_id: shopOld1.id, label, checked: true, checked_by: 'u4', position: i })),
+  ...['牛乳', '卵', '食パン', 'バナナ', '鶏むね肉', '洗剤'].map((label, i) => ({ id: id(), task_id: shopOld2.id, label, checked: true, checked_by: 'me', position: i })),
   ...['炭', '着火剤', '氷', 'ソーセージ', 'マシュマロ'].map((label, i) => ({ id: id(), task_id: shop2.id, label, checked: false, position: i })),
 ];
 const reactions: Any[] = [{ task_id: report.id, occ_date: T, user_id: 'u3', emoji: '👏' }];
@@ -179,12 +184,17 @@ async function handle(path: string, method: string, b: Any): Promise<any> {
     }
   }
   if (seg[0] === 'tasks' && seg[2] === 'done') { const t = findTask(seg[1]); setDone(t, b.day, b.done !== false); return { ok: true }; }
-  if (seg[0] === 'tasks' && seg[2] === 'items') {
+  if (seg[0] === 'tasks' && seg[2] === 'items' && !seg[3]) {
     const t = findTask(seg[1]);
     const labels = (b.labels || [b.label]).filter(Boolean);
     const max = Math.max(-1, ...items.filter(i => i.task_id === t.id).map(i => i.position));
     labels.forEach((label: string, i: number) => items.push({ id: id(), task_id: t.id, label, checked: false, position: max + 1 + i }));
     t.done_at = null;
+    return { ok: true };
+  }
+  if (seg[0] === 'tasks' && seg[2] === 'items' && seg[3] === 'clear-checked') {
+    const t = findTask(seg[1]);
+    for (let i = items.length - 1; i >= 0; i--) if (items[i].task_id === t.id && items[i].checked) items.splice(i, 1);
     return { ok: true };
   }
   if (seg[0] === 'items') {
@@ -194,6 +204,7 @@ async function handle(path: string, method: string, b: Any): Promise<any> {
     let completed = false;
     if ('checked' in b) {
       it.checked = !!b.checked;
+      it.checked_by = b.checked ? 'me' : null;
       const t = findTask(it.task_id);
       const left = items.filter(i => i.task_id === t.id && !i.checked).length;
       if (left === 0 && !t.done_at) { setDone(t, null, true); completed = true; } else if (left > 0) t.done_at = null;
