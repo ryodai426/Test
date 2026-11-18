@@ -359,3 +359,21 @@ b, strong { font-weight: var(--w-head); }
 .ev.ev-half .s { font-weight: var(--w-base); }
 .allday-wrap { flex-direction: row !important; flex-wrap: wrap; gap: 6px 14px !important; }
 .allday-wrap .row { max-width: 100%; }
+
+/* ---- グループのメンバー（上に並ぶアイコン） ---- */
+.member-strip { display: flex; gap: 6px; overflow-x: auto; padding: 10px 2px 2px; scrollbar-width: none; }
+.member-strip::-webkit-scrollbar { display: none; }
+.member { flex: none; width: 92px; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 4px 9px; border-radius: 18px; background: var(--card); border: 2px solid transparent; }
+.member:hover { border-color: var(--line); }
+.member.on { border-color: var(--green); background: #F2FAEC; }
+.member-av { position: relative; display: inline-flex; }
+.avatar { border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: var(--ink); font-weight: var(--w-head); flex: none; box-shadow: inset 0 0 0 2px rgba(44, 46, 42, .08); }
+.member-dot { position: absolute; right: -1px; bottom: -1px; width: 13px; height: 13px; border-radius: 50%; border: 2.5px solid var(--card); background: var(--line); }
+.member-dot.now { background: var(--coral); }
+.member-dot.next { background: var(--yellow); }
+.member-dot.free { background: var(--green); }
+.member-name { font-size: 12.5px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member-st { font-size: 10.5px; color: var(--sub); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member-st.now { color: var(--ink); }
+.title-who { font-size: 14px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 899px) { .member-strip { padding-top: 8px; } .member { width: 84px; } }

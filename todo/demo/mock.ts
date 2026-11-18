@@ -25,16 +25,19 @@ const groups: Any[] = [
 function task(p: Any): Any {
   return {
     id: id(), user_id: 'me', group_id: 'gp', status: 'ready', title: '', description: '', kind: 'general', color: null,
-    kind_id: null, date: null, time: null, duration_min: 60, reminders: KIND_PRESETS[p.kind || 'general'].reminders, remind_all: false, repeat: null,
+    kind_id: null, assignees: null, date: null, time: null, duration_min: 60, reminders: KIND_PRESETS[p.kind || 'general'].reminders, remind_all: false, repeat: null,
     captured_at: ago(60 * 24), detailed_at: ago(60 * 24), done_at: null, done_by: null, updated_at: ago(60), ...p,
   };
 }
 
 const shop1 = task({ group_id: 'gf', user_id: 'u4', title: '今日の買い物', kind: 'shopping' });
 const shop2 = task({ title: '週末キャンプの買い出し', kind: 'shopping', date: addDays(sat, -1) });
-const report = task({ group_id: 'gw', user_id: 'u2', title: '資料作成', date: T, time: '13:00', duration_min: 90, done_at: ago(2), done_by: 'u2' });
-const review = task({ group_id: 'gw', user_id: 'u3', title: '企画書レビュー', kind: 'meeting', date: T, time: '15:30', description: '第3会議室' });
-const duty = task({ group_id: 'gw', title: '朝当番', kind: 'duty', date: mon, time: '08:00', duration_min: 30, repeat: { freq: 'weekly', interval: 1, weekdays: [1, 4], monthMode: 'day', until: null } });
+// デモを開いた時刻に合わせて「今やっていること」が出るように
+const H = new Date().getHours();
+const hh = (h: number) => `${String(Math.max(0, Math.min(23, h))).padStart(2, '0')}:00`;
+const report = task({ group_id: 'gw', user_id: 'u2', assignees: ['u2'], title: '資料作成', date: T, time: '13:00', duration_min: 90, done_at: ago(2), done_by: 'u2' });
+const review = task({ group_id: 'gw', user_id: 'u3', assignees: ['u3', 'me'], title: '企画書レビュー', kind: 'meeting', date: T, time: '15:30', description: '第3会議室' });
+const duty = task({ group_id: 'gw', assignees: ['me'], title: '朝当番', kind: 'duty', date: mon, time: '08:00', duration_min: 30, repeat: { freq: 'weekly', interval: 1, weekdays: [1, 4], monthMode: 'day', until: null } });
 
 const tasks: Any[] = [
   duty, report, review, shop1, shop2,
@@ -42,8 +45,10 @@ const tasks: Any[] = [
   task({ group_id: 'gf', user_id: 'u4', title: 'ゴミ出し', kind: 'duty', date: mon, time: '07:30', duration_min: 15, remind_all: true, repeat: { freq: 'weekly', interval: 1, weekdays: [2, 5], monthMode: 'day', until: null } }),
   task({ title: '歯医者', kind: 'reminder', date: addDays(T, 1), time: '18:30' }),
   task({ title: 'ランニング', date: addDays(T, 2), time: '06:30', duration_min: 45, color: '#EBC1FF' }),
-  task({ group_id: 'gw', user_id: 'u2', title: '見積書を送る', date: addDays(T, 1), time: '11:00', duration_min: 30 }),
-  task({ group_id: 'gw', title: 'A社訪問', kind_id: 'k1', date: T, time: '11:30', duration_min: 60 }),
+  task({ group_id: 'gw', user_id: 'u2', assignees: ['u2'], title: '見積書を送る', date: addDays(T, 1), time: '11:00', duration_min: 30 }),
+  task({ group_id: 'gw', user_id: 'u3', assignees: ['u3'], title: 'B社・C社 外回り', kind_id: 'k1', date: T, time: hh(H), duration_min: 150 }),
+  task({ group_id: 'gw', user_id: 'u2', assignees: ['u2'], title: '提案書づくり', date: T, time: hh(H + 2), duration_min: 90 }),
+  task({ group_id: 'gw', assignees: ['me'], title: 'A社訪問', kind_id: 'k1', date: T, time: '11:30', duration_min: 60 }),
   task({ group_id: 'gf', title: '週末キャンプ（道志）', date: sat, color: '#8ED462', description: '10時に出発' }),
   task({ title: 'ランタンの電池を買う' }),
   task({ title: 'キャンプ場の予約を確認' }),
@@ -105,6 +110,8 @@ function pick(b: Any, keys: string[]) {
   for (const k of keys) if (k in b) o[k] = b[k];
   return o;
 }
+const assigneesFrom = (groupId: string, raw: unknown) =>
+  groupId === 'gp' || raw === 'all' || raw === null ? null : Array.isArray(raw) && raw.length ? raw : ['me'];
 const TASK_KEYS = ['title', 'description', 'kind', 'kind_id', 'color', 'date', 'time', 'duration_min', 'reminders', 'remind_all', 'repeat', 'group_id'];
 
 function state(day: string | null) {
@@ -145,7 +152,8 @@ async function handle(path: string, method: string, b: Any): Promise<any> {
   if (p === 'tasks' && M === 'POST') {
     if (b.quick) { const t = task({ status: 'draft', title: (b.title || '').slice(0, 120), captured_at: new Date().toISOString(), detailed_at: null, reminders: [] }); tasks.push(t); return { id: t.id }; }
     if (!b.title?.trim()) fail('タイトルを入力してください');
-    const t = task({ ...pick(b, TASK_KEYS), group_id: b.group_id || 'gp', detailed_at: new Date().toISOString(), captured_at: new Date().toISOString() });
+    const gid = b.group_id || 'gp';
+    const t = task({ ...pick(b, TASK_KEYS), group_id: gid, assignees: assigneesFrom(gid, 'assignees' in b ? b.assignees : ['me']), detailed_at: new Date().toISOString(), captured_at: new Date().toISOString() });
     tasks.push(t);
     (b.items || []).forEach((label: string, i: number) => items.push({ id: id(), task_id: t.id, label, checked: false, position: i }));
     notifyOthers(t.group_id, 'created', t.id, '');
@@ -157,6 +165,7 @@ async function handle(path: string, method: string, b: Any): Promise<any> {
     if (M === 'PATCH') {
       if (t.status === 'draft' && b.status === 'ready') { if (!(b.title ?? t.title)) fail('タイトルを入力してください'); t.status = 'ready'; t.detailed_at = new Date().toISOString(); }
       Object.assign(t, pick(b, TASK_KEYS), { updated_at: new Date().toISOString() });
+      if ('assignees' in b || 'group_id' in b) t.assignees = assigneesFrom(t.group_id, 'assignees' in b ? b.assignees : t.assignees);
       if (!t.time) t.reminders = [];
       return { ok: true };
     }

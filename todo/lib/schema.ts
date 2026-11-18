@@ -83,6 +83,8 @@ CREATE TABLE IF NOT EXISTS task_kinds (
 CREATE UNIQUE INDEX IF NOT EXISTS task_kinds_name_idx ON task_kinds(group_id, lower(name));
 -- 自分で足した種類を選んだタスク（kind は 'general' のまま、通知のタイミングも一般と同じ）
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS kind_id uuid REFERENCES task_kinds(id) ON DELETE SET NULL;
+-- 予定を表示する人（グループの予定）。NULL ＝「共通」（グループの全員）
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignees uuid[];
 
 -- 繰り返しタスクの「その日の分」の完了
 CREATE TABLE IF NOT EXISTS task_done (

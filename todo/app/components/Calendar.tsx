@@ -14,6 +14,7 @@ type Props = {
   onNew: (day: string, time?: string) => void;
   onToggle: (o: Occ) => void;
   onPickDay: (day: string) => void;
+  who?: string; // 誰の予定を出すか（省略＝自分）
 };
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -186,7 +187,7 @@ function HalfDay({ base, list, p, nowMin }: { base: number; list: Occ[]; p: Prop
 export function DayView(p: Props) {
   const nowMin = useNowMin();
   const wide = useIsWide();
-  const list = occurrences(p.state, p.cursor, p.groupFilter);
+  const list = occurrences(p.state, p.cursor, p.groupFilter, p.who);
   const ref = useScrollToMorning(wide ? 'split' : p.cursor);
   if (wide) {
     // PC：1日を午前と午後の2列に分け、スクロールせずに見渡せるようにする
@@ -219,7 +220,7 @@ export function WeekView(p: Props) {
   const nowMin = useNowMin();
   const start = weekStart(p.cursor);
   const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
-  const lists = days.map(d => occurrences(p.state, d, p.groupFilter));
+  const lists = days.map(d => occurrences(p.state, d, p.groupFilter, p.who));
   const hasUntimed = lists.some(l => l.some(o => !o.task.time));
   const cols = '44px repeat(7, minmax(0, 1fr))';
   const ref = useScrollToMorning(start);
@@ -271,7 +272,7 @@ export function MonthView(p: Props) {
     <div className="month">
       {WEEK_LABELS.map((w, i) => <div key={w} className="wh" style={{ color: i === 0 ? '#dc2626' : i === 6 ? '#2563eb' : undefined }}>{w}</div>)}
       {shown.map(d => {
-        const list = occurrences(p.state, d, p.groupFilter);
+        const list = occurrences(p.state, d, p.groupFilter, p.who);
         return (
           <button key={d} className={'mcell' + (d.slice(0, 7) !== month ? ' other' : '') + (d === p.today ? ' today' : '')} onClick={() => p.onPickDay(d)}>
             <span className="n">{Number(d.slice(8))}</span>
