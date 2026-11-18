@@ -6,7 +6,8 @@ import Login from './components/Login';
 import Icon, { Logo, Scene } from './components/Icon';
 import Emoji, { EmojiText } from './components/Emoji';
 import TodayBrief from './components/TodayBrief';
-import MemberStrip from './components/Members';
+import MemberStrip, { MemberFocus } from './components/Members';
+import { Review, ReviewPrompt } from './components/Review';
 import MemoBoard from './components/MemoBoard';
 import { DayView, MonthView, WeekView, periodLabel } from './components/Calendar';
 import TaskEditor, { type EditorInit } from './components/TaskEditor';
@@ -40,6 +41,8 @@ export default function App() {
   const [stickies, setStickies] = useState<Sticky[]>([]);
   const [banner, setBanner] = useState<{ icon: string; title: string; body: string } | null>(null);
   const [memoBoard, setMemoBoard] = useState(false);
+  const [review, setReview] = useState(false); // 今日の振り返り
+  const [reviewAsk, setReviewAsk] = useState(false); // 「振り返りを見ますか？」
   // 「完了しましたか？」の順番待ち（1つずつ聞く）
   const [confirms, setConfirms] = useState<{ taskId: string; day: string }[]>([]);
   const enqueueConfirm = useCallback((taskId: string, day: string) => {
@@ -127,6 +130,7 @@ export default function App() {
   function openFromParams(p: URLSearchParams, s: State) {
     const edit = p.get('edit');
     if (edit) { const t = s.tasks.find(x => x.id === edit); if (t) setEditor({ task: t }); }
+    if (p.get('review')) setReview(true);
     const cf = p.get('confirm');
     if (cf && s.tasks.some(x => x.id === cf)) enqueueConfirm(cf, p.get('day') || localToday());
     const cl = p.get('checklist');
@@ -267,6 +271,24 @@ export default function App() {
     setBrief(true);
   }, [meId, today]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ---- 夕方に開いたら「今日の振り返りを見ますか？」（その日1回だけ。スキップ設定なら出さない） ----
+  // ※ アプリを閉じる瞬間に画面を出すことは、ブラウザの仕組み上できないため、夕方以降に開いたときに聞く
+  useEffect(() => {
+    if (!state?.me || state.me.review_skip || brief || review) return;
+    const check = () => {
+      if (new Date().getHours() < 18) return;
+      const key = `review-asked:${state.me!.id}:${localToday()}`;
+      if (LS.get(key)) return;
+      LS.set(key, '1');
+      setReviewAsk(true);
+    };
+    check();
+    const onVis = () => { if (document.visibilityState === 'visible') check(); };
+    document.addEventListener('visibilitychange', onVis);
+    const id = setInterval(check, 60000);
+    return () => { document.removeEventListener('visibilitychange', onVis); clearInterval(id); };
+  }, [state?.me?.id, state?.me?.review_skip, brief, review]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ---- 持ち物チェックリストの自動表示（決まった時間） -------------------------------
   useEffect(() => {
     if (!state || fullList || brief) return;
@@ -282,6 +304,7 @@ export default function App() {
       if (e.metaKey || e.ctrlKey || e.altKey || /INPUT|TEXTAREA|SELECT/.test(el.tagName)) return;
       if (brief) { setBrief(false); return; } // PC ではどのキーでも閉じる
       if (memoBoard) { if (e.key === 'Escape') setMemoBoard(false); return; }
+      if (review) { if (e.key === 'Escape') setReview(false); return; }
       if (editor || panel || fullList || banner) { if (e.key === 'Escape') { setEditor(null); setPanel(null); setFullList(null); setBanner(null); } return; }
       const k = e.key.toLowerCase();
       if (k === 'n') { e.preventDefault(); if (window.innerWidth >= 900) sideCaptureRef.current?.focus(); else openCapture(); }
@@ -382,6 +405,7 @@ export default function App() {
         <button className="side-link" onClick={() => setMemoBoard(true)}><Icon name="memo" size={19} />メモを見る {drafts.length > 0 && <span className="count">{drafts.length}</span>}</button>
         <button className="side-link" onClick={() => setPanel('shopping')}><Icon name="cart" size={19} />買い物リスト <span className="count">{shoppingOpen.length || ''}</span></button>
         <button className="side-link" onClick={() => setPanel('checklists')}><Icon name="pack" size={19} />持ち物チェック</button>
+        <button className="side-link" onClick={() => setReview(true)}><Icon name="check" size={19} />今日の振り返り</button>
         <button className="side-link" onClick={() => setPanel('notices')}><Icon name="bell" size={19} />お知らせ {unread > 0 && <span className="count alert">{unread}</span>}</button>
         <div className="side-section">グループ</div>
         <button className={'side-link' + (groupFilter === 'all' ? ' on' : '')} onClick={() => setGroupFilter('all')}><Icon name="calendar" size={19} />すべて表示</button>
@@ -421,6 +445,10 @@ export default function App() {
         {sharedGroup && (
           <MemberStrip state={state} group={sharedGroup} who={who} today={today}
             onPick={id => setViewMember(id === me.id || id === viewMember ? null : id)} />
+        )}
+        {sharedGroup && whoName && (
+          <MemberFocus state={state} group={sharedGroup} who={who} today={today}
+            onOpenTask={(taskId, day) => { const t = state.tasks.find(x => x.id === taskId); if (t) setEditor({ task: t, occDay: day }); }} />
         )}
         <div className="toolbar">
           <div className="seg">
@@ -495,9 +523,16 @@ export default function App() {
       {panel === 'checklists' && <ChecklistPanel state={state} onClose={() => setPanel(null)} reload={load} onOpenFull={c => { setPanel(null); setFullList(c); }} />}
       {panel === 'groups' && <GroupDrawer state={state} current={groupFilter} onClose={() => setPanel(null)} reload={load} onPick={id => { setGroupFilter(id); setPanel(id !== 'all' && !state.groups.find(g => g.id === id) ? 'members' : null); }} />}
       {panel === 'members' && currentGroup && <MembersPanel key={currentGroup.id} state={state} group={currentGroup} onClose={() => setPanel(null)} reload={load} notify={notify} onLeft={() => { setPanel(null); setGroupFilter('all'); load(); }} />}
-      {panel === 'settings' && <SettingsPanel state={state} onClose={() => setPanel(null)} notify={notify} />}
+      {panel === 'settings' && <SettingsPanel state={state} onClose={() => setPanel(null)} notify={notify} reload={load}
+        onReview={() => { setPanel(null); setReview(true); }} />}
       {panel === 'notices' && <NoticePanel state={state} onClose={() => { setPanel(null); load(); }} />}
       {brief && <TodayBrief state={state} today={today} onClose={() => setBrief(false)} />}
+      {review && <Review state={state} today={today} onClose={() => setReview(false)} reload={load} />}
+      {reviewAsk && !review && !brief && (
+        <ReviewPrompt
+          onOpen={async skip => { setReviewAsk(false); setReview(true); if (skip) { await api('me', 'PATCH', { review_skip: true }).catch(() => {}); load(); } }}
+          onClose={async skip => { setReviewAsk(false); if (skip) { await api('me', 'PATCH', { review_skip: true }).catch(() => {}); notify('振り返りの案内をスキップします（設定で戻せます）'); load(); } }} />
+      )}
       {confirms.length > 0 && !brief && !editor && (() => {
         // 聞きたい予定が複数あっても、1つの画面にまとめて出す（次々に出ないように）
         const items = confirms.map(c => ({ c, t: state.tasks.find(x => x.id === c.taskId) })).filter(x => x.t);

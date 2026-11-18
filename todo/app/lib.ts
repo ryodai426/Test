@@ -21,8 +21,8 @@ export type Checklist = {
 };
 export type Notice = { id: number; kind: string; task_id: string | null; occ_date: string | null; body: string; created_at: string; read_at: string | null; actor: string | null };
 export type State = {
-  me: { id: string; name: string; tz: string } | null;
-  groups: Group[]; tasks: Task[]; done: { task_id: string; occ_date: string; user_id: string }[];
+  me: { id: string; name: string; tz: string; review_skip?: boolean } | null;
+  groups: Group[]; tasks: Task[]; done: { task_id: string; occ_date: string; user_id: string; done_at?: string }[];
   items: Item[]; reactions: { task_id: string; occ_date: string; user_id: string; emoji: string }[];
   checklists: Checklist[]; notifications: Notice[]; pushKey: string | null;
   kinds: Kind[];
