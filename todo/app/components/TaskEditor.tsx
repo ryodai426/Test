@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { KIND_PRESETS, REMINDER_LABELS, WEEK_LABELS, weekday, type Repeat } from '@/lib/time';
+import { addDays, daysBetween, KIND_PRESETS, REMINDER_LABELS, WEEK_LABELS, weekday, type Repeat } from '@/lib/time';
 import Icon from './Icon';
 import Emoji from './Emoji';
 import { act, draftTask, P } from '../store';
@@ -9,6 +9,7 @@ import { api, hhmm, localToday, PALETTE, type State, type Task } from '../lib';
 export type EditorInit = { task?: Task; day?: string; time?: string; groupId?: string; kind?: string; occDay?: string; title?: string; assignees?: string[]; detail?: boolean; duration?: number };
 
 const REMINDER_ORDER = ['eve', '60', '30', '10', '5', '0'];
+type Scope = 'one' | 'following' | 'all';
 const WEEKDAYS = [1, 2, 3, 4, 5];
 
 export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }: {
@@ -24,7 +25,12 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
   const [kindId, setKindId] = useState<string | null>(t?.kind_id || null);
   const [addingKind, setAddingKind] = useState(false);
   const [kindName, setKindName] = useState('');
-  const [date, setDate] = useState<string>(t ? t.date || (isDraft ? localToday() : '') : init.day || localToday());
+  // 繰り返しの予定は、開いた日の分として見せる（「すべて」で保存するときは、ずらした日数だけ全体をずらす）
+  const isRepeat = !!t?.repeat && !!t.date && !isDraft;
+  const openedDay = init.occDay || t?.date || localToday();
+  const [date, setDate] = useState<string>(t ? (isRepeat ? openedDay : t.date || (isDraft ? localToday() : '')) : init.day || localToday());
+  // 繰り返しの予定を保存・削除するとき、どこまで変えるかを聞く
+  const [askScope, setAskScope] = useState<null | 'save' | 'delete'>(null);
   const [time, setTime] = useState<string>(t?.time || init.time || '');
   const [duration, setDuration] = useState(t?.duration_min || init.duration || 60);
   const [reminders, setReminders] = useState<string[]>(t && !isDraft ? t.reminders : KIND_PRESETS[init.kind || 'general'].reminders);
@@ -95,9 +101,10 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
     setReminders(rs => (rs.includes(r) ? rs.filter(x => x !== r) : [...rs, r]));
   }
 
-  async function save() {
+  async function save(scope?: Scope) {
     setErr('');
     if (!memoMode && !title.trim()) { setErr('タイトルを入力してください'); return; }
+    if (isRepeat && !scope) { setAskScope('save'); return; }
     setBusy(true);
     if (memoMode) {
       // メモのまま保存（ひとこと・詳細だけ）
@@ -120,17 +127,29 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
       repeat: body.repeat, starred, assignees: shared ? assignees : null,
     };
     onSaved(isDraft ? 'メモを予定にしました' : t ? '保存しました' : '追加しました');
-    if (t) {
+    if (t && isRepeat && scope && scope !== 'all') {
+      // この日だけ／この日以降すべて
+      act(P.splitTask(t.id, openedDay, scope, fields), () => api(`tasks/${t.id}/split`, 'POST', { ...body, day: openedDay, scope }));
+    } else if (t && isRepeat) {
+      // すべて：開いた日からずらした日数だけ、繰り返し全体をずらす。外した日はそのまま
+      const start = repeat && date ? addDays(t.date!, daysBetween(openedDay, date)) : date || null;
+      const rep = repeat ? { ...repeat, except: t.repeat!.except || [] } : null;
+      const all = { ...body, date: start, repeat: rep };
+      act(P.updateTask(t.id, { ...fields, date: start, repeat: rep }), () => api(`tasks/${t.id}`, 'PATCH', all));
+    } else if (t) {
       act(P.updateTask(t.id, { ...fields, ...(isDraft ? { status: 'ready' as const } : {}) }), () => api(`tasks/${t.id}`, 'PATCH', { ...body, ...(isDraft ? { status: 'ready' } : {}) }));
     } else {
       act(P.addTask(draftTask(state, fields), kind === 'shopping' ? newItems : []), () => api('tasks', 'POST', { ...body, items: newItems }));
     }
   }
 
-  async function remove() {
-    if (!t || !confirm(isDraft ? 'このメモを削除しますか？' : `「${t.title || 'タスク'}」を削除しますか？${t.repeat ? '\n繰り返しの予定はすべて消えます' : ''}`)) return;
+  async function remove(scope?: Scope) {
+    if (!t) return;
+    if (isRepeat && !scope) { setAskScope('delete'); return; }
+    if (!isRepeat && !confirm(isDraft ? 'このメモを削除しますか？' : `「${t.title || 'タスク'}」を削除しますか？`)) return;
     onSaved('削除しました');
-    act(P.removeTask(t.id), () => api(`tasks/${t.id}`, 'DELETE'));
+    if (isRepeat && scope && scope !== 'all') act(P.splitTask(t.id, openedDay, scope, null), () => api(`tasks/${t.id}/split`, 'POST', { day: openedDay, scope, delete: true }));
+    else act(P.removeTask(t.id), () => api(`tasks/${t.id}`, 'DELETE'));
   }
 
 
@@ -374,12 +393,26 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
           {err && <div className="err">{err}</div>}
         </div>
         <div className="sheet-foot">
-          {t && <button className="btn danger" onClick={remove}>削除</button>}
+          {t && <button className="btn danger" onClick={() => remove()}>削除</button>}
           <div className="grow" />
           <button className="btn" onClick={onClose}>キャンセル</button>
-          <button className="btn primary" onClick={save} disabled={busy}>保存</button>
+          <button className="btn primary" onClick={() => save()} disabled={busy}>保存</button>
         </div>
       </div>
+      {askScope && (
+        <div className="banner" onClick={e => { e.stopPropagation(); setAskScope(null); }}>
+          <div className="banner-card scope-card" role="dialog" aria-label={askScope === 'save' ? '繰り返しの予定を変更' : '繰り返しの予定を削除'} onClick={e => e.stopPropagation()}>
+            <h2>{askScope === 'save' ? '繰り返しの予定を変更' : '繰り返しの予定を削除'}</h2>
+            <div className="muted">{Number(openedDay.slice(5, 7))}月{Number(openedDay.slice(8))}日（{WEEK_LABELS[weekday(openedDay)]}）の分</div>
+            <div className="confirm-actions">
+              {([['one', 'この日だけ'], ['following', 'この日以降すべて'], ['all', 'すべて']] as [Scope, string][]).map(([s, label]) => (
+                <button key={s} className={'btn big' + (askScope === 'delete' ? ' danger' : '')} onClick={() => { setAskScope(null); if (askScope === 'save') save(s); else remove(s); }}>{label}</button>
+              ))}
+              <button className="btn" onClick={() => setAskScope(null)}>キャンセル</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

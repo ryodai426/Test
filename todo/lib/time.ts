@@ -7,6 +7,7 @@ export type Repeat = {
   weekdays?: number[];        // 0=日 … 6=土（weekly のとき）
   monthMode?: 'day' | 'nth';  // 毎月○日 / 毎月第n○曜日
   until?: string | null;
+  except?: string[];          // 繰り返しから外した日（「この日だけ」変更・削除した日）
 };
 
 export type TaskLike = {
@@ -47,6 +48,7 @@ export function occursOn(t: Pick<TaskLike, 'date' | 'repeat'>, day: string): boo
   if (!t.repeat) return t.date === day;
   if (day < t.date) return false;
   if (t.repeat.until && day > t.repeat.until) return false;
+  if (t.repeat.except?.includes(day)) return false;
   const interval = Math.max(1, t.repeat.interval || 1);
   const diff = daysBetween(t.date, day);
   switch (t.repeat.freq) {

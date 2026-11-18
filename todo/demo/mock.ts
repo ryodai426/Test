@@ -173,6 +173,34 @@ async function handle(path: string, method: string, b: Any): Promise<any> {
       return { ok: true };
     }
   }
+  // 繰り返しの予定の「この日だけ／この日以降」（サーバーの tasks/:id/split と同じ動き）
+  if (seg[0] === 'tasks' && seg[2] === 'split') {
+    const t = findTask(seg[1]);
+    const day = b.day, scope = b.scope;
+    const except: string[] = t.repeat.except || [];
+    if (scope === 'following' && day === t.date) {
+      if (b.delete) tasks.splice(tasks.indexOf(t), 1);
+      else Object.assign(t, pick(b, TASK_KEYS), { updated_at: new Date().toISOString() });
+      return { ok: true };
+    }
+    const prev = addDays(day, -1);
+    const oldRepeat = { ...t.repeat };
+    t.repeat = scope === 'one' ? { ...oldRepeat, except: [...new Set([...except, day])].sort() } : { ...oldRepeat, until: prev, except: except.filter(d => d < day) };
+    const inRange = (d: string) => (scope === 'one' ? d === day : d >= day);
+    if (b.delete) {
+      for (let i = done.length - 1; i >= 0; i--) if (done[i].task_id === t.id && inRange(done[i].occ_date)) done.splice(i, 1);
+      return { ok: true };
+    }
+    const n = task({ ...t, id: id(), ...pick(b, TASK_KEYS), date: b.date || day, repeat: scope === 'one' ? null : { ...(b.repeat || oldRepeat), except: except.filter(d => d >= day) }, done_at: null, done_by: null });
+    tasks.push(n);
+    for (let i = done.length - 1; i >= 0; i--) {
+      const d = done[i];
+      if (d.task_id !== t.id || !inRange(d.occ_date)) continue;
+      if (scope === 'one') { n.done_at = d.done_at || new Date().toISOString(); n.done_by = d.user_id; done.splice(i, 1); } else d.task_id = n.id;
+    }
+    reactions.forEach(r => { if (r.task_id === t.id && inRange(r.occ_date)) r.task_id = n.id; });
+    return { ok: true, id: n.id };
+  }
   if (seg[0] === 'tasks' && seg[2] === 'done') { const t = findTask(seg[1]); setDone(t, b.day, b.done !== false); return { ok: true }; }
   if (seg[0] === 'tasks' && seg[2] === 'items' && !seg[3]) {
     const t = findTask(seg[1]);

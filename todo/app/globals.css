@@ -528,3 +528,8 @@ b, strong { font-weight: var(--w-head); }
 
 /* Tab で選んでいる切り替えボタン */
 .toolbar [data-nav]:focus-visible { outline: 3px solid var(--sky); outline-offset: 2px; position: relative; z-index: 1; }
+/* 繰り返しの予定：どこまで変えるか */
+.scope-card { background: var(--card); }
+.scope-card .btn.big.danger { background: #FFE9E5; color: var(--danger); }
+.scope-card .btn.big:not(.danger) { background: var(--green); }
+.scope-card .btn.big { justify-content: center; }
