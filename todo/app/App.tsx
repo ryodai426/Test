@@ -1,8 +1,9 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { addDays, DRAFT_STEPS, occursOn, reminderMessage, reminderTimes, KIND_PRESETS } from '@/lib/time';
-import { api, ApiError, localToday, occurrences, type Checklist, type Occ, type State, type Task } from './lib';
+import { api, ApiError, isDemo, sw, localToday, occurrences, type Checklist, type Occ, type State, type Task } from './lib';
 import Login from './components/Login';
+import Icon, { Logo } from './components/Icon';
 import { DayView, MonthView, WeekView, periodLabel } from './components/Calendar';
 import TaskEditor, { type EditorInit } from './components/TaskEditor';
 import {
@@ -64,7 +65,7 @@ export default function App() {
     setGroupFilter(LS.get('group') || 'all');
     if (params.get('date')) { setCursor(params.get('date')!); setView('day'); }
     load();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+    if (!isDemo()) sw()?.register('/sw.js').catch(() => {});
   }, [load, params]);
 
   useEffect(() => { LS.set('view', view); }, [view]);
@@ -99,7 +100,7 @@ export default function App() {
       }).catch(() => notify('招待リンクが無効です'));
     }
     openFromParams(params, state);
-    if (location.search) history.replaceState(null, '', '/');
+    if (location.search && !isDemo()) history.replaceState(null, '', '/');
   }, [state]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function openFromParams(p: URLSearchParams, s: State) {
@@ -113,7 +114,8 @@ export default function App() {
 
   // Service Worker からの合図（見ている最中に届いた通知・通知をタップした時）
   useEffect(() => {
-    if (!('serviceWorker' in navigator)) return;
+    const container = sw();
+    if (!container) return;
     const onMsg = (e: MessageEvent) => {
       if (e.data?.type === 'push') {
         const d = e.data.data || {};
@@ -123,8 +125,8 @@ export default function App() {
         openFromParams(new URL(e.data.url, location.origin).searchParams, stateRef.current);
       }
     };
-    navigator.serviceWorker.addEventListener('message', onMsg);
-    return () => navigator.serviceWorker.removeEventListener('message', onMsg);
+    container.addEventListener('message', onMsg);
+    return () => container.removeEventListener('message', onMsg);
   }, [load]);
 
   // ---- メンバーの動きを付箋で出す -----------------------------------------------
@@ -292,26 +294,27 @@ export default function App() {
     <div className="shell">
       {/* ---------- PC：左のサイドバー ---------- */}
       <aside className="sidebar">
-        <div className="brand">📅 わすれないTODO</div>
+        <div className="brand"><Logo size={34} /><div><b>わすれないTODO</b><small>{isDemo() ? 'Trail Notes · Demo' : 'Trail Notes'}</small></div></div>
         <div className="capture-box">
-          <input ref={sideCaptureRef} type="text" placeholder="思いついたら、ひとことだけ" value={capture} onChange={e => setCapture(e.target.value)}
+          <label className="cap-label" htmlFor="side-capture">Quick memo</label>
+          <input id="side-capture" ref={sideCaptureRef} type="text" placeholder="思いついたら、ひとことだけ" value={capture} onChange={e => setCapture(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); saveCapture(capture.trim(), true); } if (e.key === 'Escape') (e.target as HTMLInputElement).blur(); }} />
           <div className="hint"><kbd>Enter</kbd> で未記入メモに保存（空でもOK）・<kbd>N</kbd> でここへ</div>
         </div>
-        <button className="btn primary block" onClick={() => setEditor({ day: cursor, groupId: groupFilter !== 'all' ? groupFilter : undefined })}>＋ 予定・タスクを追加</button>
+        <button className="btn sun block" onClick={() => setEditor({ day: cursor, groupId: groupFilter !== 'all' ? groupFilter : undefined })}><Icon name="plus" size={18} stroke={2.4} />予定・タスクを追加</button>
         <div style={{ height: 8 }} />
-        <button className="side-link" onClick={() => setPanel('drafts')}>📋 未記入のメモ {drafts.length > 0 && <span className="count alert">{drafts.length}</span>}</button>
-        <button className="side-link" onClick={() => setPanel('shopping')}>🛒 買い物リスト <span className="count">{shoppingOpen.length || ''}</span></button>
-        <button className="side-link" onClick={() => setPanel('checklists')}>✅ 持ち物チェック</button>
-        <button className="side-link" onClick={() => setPanel('notices')}>🔔 お知らせ {unread > 0 && <span className="count alert">{unread}</span>}</button>
+        <button className="side-link" onClick={() => setPanel('drafts')}><Icon name="memo" size={19} />未記入のメモ {drafts.length > 0 && <span className="count alert">{drafts.length}</span>}</button>
+        <button className="side-link" onClick={() => setPanel('shopping')}><Icon name="cart" size={19} />買い物リスト <span className="count">{shoppingOpen.length || ''}</span></button>
+        <button className="side-link" onClick={() => setPanel('checklists')}><Icon name="pack" size={19} />持ち物チェック</button>
+        <button className="side-link" onClick={() => setPanel('notices')}><Icon name="bell" size={19} />お知らせ {unread > 0 && <span className="count alert">{unread}</span>}</button>
         <div className="side-section">グループ</div>
-        <button className={'side-link' + (groupFilter === 'all' ? ' on' : '')} onClick={() => setGroupFilter('all')}>☑ すべて表示</button>
+        <button className={'side-link' + (groupFilter === 'all' ? ' on' : '')} onClick={() => setGroupFilter('all')}><Icon name="calendar" size={19} />すべて表示</button>
         {state.groups.map(g => (
           <button key={g.id} className={'side-link' + (groupFilter === g.id ? ' on' : '')} onClick={() => setGroupFilter(g.id)}>
             <span className="dot" style={{ background: g.color }} />{g.name}<span className="count">{g.is_personal ? '' : `${g.members.length}人`}</span>
           </button>
         ))}
-        <button className="side-link muted" onClick={() => setPanel('groups')}>＋ 新しいグループ</button>
+        <button className="side-link dim" onClick={() => setPanel('groups')}><Icon name="plus" size={19} />新しいグループ</button>
         {someday.length > 0 && (
           <>
             <div className="side-section">いつかやる（日付なし）</div>
@@ -324,18 +327,19 @@ export default function App() {
         )}
         <div className="grow" />
         <div className="side-section">{me.name} さん</div>
-        {currentGroup && <button className="side-link" onClick={() => setPanel('members')}>👤 メンバー・共有設定</button>}
-        <button className="side-link" onClick={() => setPanel('settings')}>⚙ 設定・他の端末で使う</button>
+        {currentGroup && <button className="side-link" onClick={() => setPanel('members')}><Icon name="users" size={19} />メンバー・共有設定</button>}
+        <button className="side-link" onClick={() => setPanel('settings')}><Icon name="gear" size={19} />設定・他の端末で使う</button>
       </aside>
 
       {/* ---------- メイン ---------- */}
       <main className="main">
+        <div className="head">
         <div className="topbar">
-          <button className="icon-btn only-mobile" onClick={() => setPanel('groups')} aria-label="グループ切り替え">☰</button>
+          <button className="icon-btn only-mobile" onClick={() => setPanel('groups')} aria-label="グループ切り替え"><Icon name="menu" /></button>
           <div className="title">{groupTitle}</div>
-          <button className="icon-btn only-mobile" onClick={() => setPanel('notices')} aria-label="お知らせ">🔔{unread > 0 && <span className="badge">{unread}</span>}</button>
-          <button className="icon-btn" onClick={() => (currentGroup ? setPanel('members') : setPanel('groups'))} aria-label="メンバー">👤</button>
-          <button className="icon-btn only-mobile" onClick={() => setPanel('settings')} aria-label="設定">⚙</button>
+          <button className="icon-btn only-mobile" onClick={() => setPanel('notices')} aria-label="お知らせ"><Icon name="bell" />{unread > 0 && <span className="badge">{unread}</span>}</button>
+          <button className="icon-btn" onClick={() => (currentGroup ? setPanel('members') : setPanel('groups'))} aria-label="メンバー"><Icon name="users" /></button>
+          <button className="icon-btn only-mobile" onClick={() => setPanel('settings')} aria-label="設定"><Icon name="gear" /></button>
         </div>
         <div className="toolbar">
           <div className="seg">
@@ -344,11 +348,12 @@ export default function App() {
             ))}
           </div>
           <span className="period grow">{periodLabel(view, cursor)}
-            {view === 'day' && todayList.length > 0 && <span className="small muted" style={{ fontWeight: 400, marginLeft: 8 }}>{todayList.filter(o => o.done).length}/{todayList.length} 完了</span>}
+            {view === 'day' && todayList.length > 0 && <span className="small" style={{ fontWeight: 500, marginLeft: 10, opacity: .7, letterSpacing: '.06em' }}>{todayList.filter(o => o.done).length}/{todayList.length} 完了</span>}
           </span>
-          <button className="icon-btn" onClick={() => move(-1)} aria-label="前へ">‹</button>
+          <button className="icon-btn" onClick={() => move(-1)} aria-label="前へ"><Icon name="left" size={20} /></button>
           <button className="btn small" onClick={() => setCursor(localToday())}>今日</button>
-          <button className="icon-btn" onClick={() => move(1)} aria-label="次へ">›</button>
+          <button className="icon-btn" onClick={() => move(1)} aria-label="次へ"><Icon name="right" size={20} /></button>
+        </div>
         </div>
         <div className="content">
           {view === 'day' && cursor === today && someday.length > 0 && (
@@ -371,11 +376,11 @@ export default function App() {
 
         {/* ---------- スマホ：下のボタン ---------- */}
         <nav className="bottombar">
-          <button onClick={() => setPanel('drafts')}><span className="i">📋</span>未記入{drafts.length > 0 && <span className="badge">{drafts.length}</span>}</button>
-          <button onClick={() => setPanel('shopping')}><span className="i">🛒</span>買い物</button>
-          <button className="capture-btn" onClick={openCapture} aria-label="ひとことメモ"><span className="i">＋</span>メモ</button>
-          <button onClick={() => setPanel('checklists')}><span className="i">✅</span>持ち物</button>
-          <button onClick={() => setEditor({ day: cursor, groupId: groupFilter !== 'all' ? groupFilter : undefined })}><span className="i">📅</span>予定</button>
+          <button onClick={() => setPanel('drafts')}><span className="i"><Icon name="memo" /></span>未記入{drafts.length > 0 && <span className="badge">{drafts.length}</span>}</button>
+          <button onClick={() => setPanel('shopping')}><span className="i"><Icon name="cart" /></span>買い物</button>
+          <button className="capture-btn" onClick={openCapture} aria-label="ひとことメモ"><span className="i"><Icon name="plus" size={28} stroke={2.4} /></span>メモ</button>
+          <button onClick={() => setPanel('checklists')}><span className="i"><Icon name="pack" /></span>持ち物</button>
+          <button onClick={() => setEditor({ day: cursor, groupId: groupFilter !== 'all' ? groupFilter : undefined })}><span className="i"><Icon name="calendar" /></span>予定</button>
         </nav>
       </main>
 

@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { api } from '../lib';
+import { Logo } from './Icon';
 
 export default function Login({ onDone, initialCode }: { onDone: () => void; initialCode?: string }) {
   const [mode, setMode] = useState<'new' | 'code'>(initialCode ? 'code' : 'new');
@@ -28,9 +29,9 @@ export default function Login({ onDone, initialCode }: { onDone: () => void; ini
   }
 
   return (
-    <div className="login">
+    <div className="login forest-surface">
       <form className="login-card" onSubmit={submit}>
-        <div style={{ fontSize: 40 }}>📅</div>
+        <div className="login-mark"><Logo size={34} /><span>Trail Notes</span></div>
         <h1>わすれないTODO</h1>
         {mode === 'new' ? (
           <>

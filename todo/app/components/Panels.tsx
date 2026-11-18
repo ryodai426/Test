@@ -1,15 +1,16 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { WEEK_LABELS } from '@/lib/time';
-import { api, fmtJpDate, hhmm, localDateOf, localToday, PALETTE, type Checklist, type Group, type State, type Task } from '../lib';
+import Icon from './Icon';
+import { sw, api, fmtJpDate, hhmm, localDateOf, localToday, PALETTE, type Checklist, type Group, type State, type Task } from '../lib';
 
-function Sheet({ title, onClose, children, foot, side = true }: { title: string; onClose: () => void; children: React.ReactNode; foot?: React.ReactNode; side?: boolean }) {
+function Sheet({ title, icon, onClose, children, foot, side = true }: { title: string; icon?: string; onClose: () => void; children: React.ReactNode; foot?: React.ReactNode; side?: boolean }) {
   return (
     <div className={'overlay' + (side ? ' side' : '')} onClick={onClose}>
       <div className="sheet" onClick={e => e.stopPropagation()}>
         <div className="sheet-head">
-          <h3>{title}</h3>
-          <button className="icon-btn" onClick={onClose} aria-label="閉じる">✕</button>
+          <h3>{icon && <Icon name={icon} />}{title}</h3>
+          <button className="icon-btn" onClick={onClose} aria-label="閉じる"><Icon name="close" size={20} /></button>
         </div>
         <div className="sheet-body">{children}</div>
         {foot && <div className="sheet-foot">{foot}</div>}
@@ -24,7 +25,7 @@ export function DraftsPanel({ state, onClose, onOpen, reload }: { state: State; 
   const drafts = state.tasks.filter(t => t.status === 'draft' && t.user_id === state.me!.id)
     .sort((a, b) => b.captured_at.localeCompare(a.captured_at));
   return (
-    <Sheet title="未記入のメモ" onClose={onClose}>
+    <Sheet title="未記入のメモ" icon="memo" onClose={onClose}>
       <div className="small muted" style={{ marginTop: 10 }}>🔒 自分にしか見えません。押すと詳細を入力できます。</div>
       {drafts.length === 0 && <div className="empty">未記入のメモはありません 🎉</div>}
       {drafts.map(t => (
@@ -36,7 +37,7 @@ export function DraftsPanel({ state, onClose, onOpen, reload }: { state: State; 
             </div>
             <span className="muted small">詳細を入力 ›</span>
           </button>
-          <button className="icon-btn" style={{ marginTop: 10 }} aria-label="削除" onClick={async () => { await api(`tasks/${t.id}`, 'DELETE'); reload(); }}>🗑</button>
+          <button className="icon-btn" style={{ marginTop: 10 }} aria-label="削除" onClick={async () => { await api(`tasks/${t.id}`, 'DELETE'); reload(); }}><Icon name="trash" size={19} /></button>
         </div>
       ))}
     </Sheet>
@@ -110,10 +111,10 @@ export function ShoppingPanel({ state, groupFilter, onClose, reload, onShoppingD
   };
 
   return (
-    <Sheet title="🛒 買い物リスト" onClose={onClose}>
+    <Sheet title="買い物リスト" icon="cart" onClose={onClose}>
       {open.length === 0 && <div className="empty">買い物リストはありません</div>}
       {open.map(renderList)}
-      <div className="card" style={{ background: 'var(--soft)' }}>
+      <div className="card soft">
         <div className="small" style={{ fontWeight: 700, marginBottom: 8 }}>＋ 新しい買い物リスト</div>
         <input type="text" placeholder="例：今日の買い物、週末の買い物" value={newName} onChange={e => setNewName(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) create(); }} />
@@ -160,18 +161,19 @@ export function FullChecklist({ list, onClose, reload }: { list: Checklist; onCl
   return (
     <div className="fullcheck">
       <div className="row">
-        <div className="grow muted small">✅ 持ち物チェック</div>
-        <button className="icon-btn" onClick={onClose} aria-label="閉じる">✕</button>
+        <div className="grow eyebrow">Before you go</div>
+        <button className="icon-btn" onClick={onClose} aria-label="閉じる"><Icon name="close" /></button>
       </div>
-      <h2 style={{ textAlign: 'center' }}>{list.name}</h2>
-      <div className="muted small" style={{ textAlign: 'center' }}>指差し確認しながらタップ</div>
+      <h2>{list.name}</h2>
+      <div className="sub">指差し確認しながらタップ</div>
+      <div className="progress">{items.filter(i => i.checked).length} / {items.length}</div>
       <div className="items">
         {items.map(i => (
           <button key={i.id} className={'it' + (i.checked ? ' on' : '')} onClick={() => flip(i.id)}>
             <span className={'box' + (i.checked ? ' on' : '')}>{i.checked ? '✓' : ''}</span>{i.label}
           </button>
         ))}
-        {items.length === 0 && <div className="empty">項目がありません。「✅ 持ち物」から追加できます。</div>}
+        {items.length === 0 && <div className="empty" style={{ color: 'rgba(255,255,255,.7)' }}>項目がありません。「持ち物」から追加できます。</div>}
       </div>
       <button className="btn primary block" style={{ maxWidth: 520, alignSelf: 'center' }} onClick={onClose}>
         {all ? '全部OK！ いってらっしゃい' : 'とじる'}
@@ -247,7 +249,7 @@ export function ChecklistPanel({ state, onClose, reload, onOpenFull }: { state: 
     c.trigger === 'time' ? `${c.show_at} に表示（${c.weekdays.length === 7 ? '毎日' : [1, 2, 3, 4, 5, 6, 0].filter(w => c.weekdays.includes(w)).map(w => WEEK_LABELS[w]).join('')}）`
       : c.trigger === 'after_shopping' ? '買い物が終わったら表示' : '自分で開く';
   return (
-    <Sheet title="✅ 持ち物チェックリスト" onClose={onClose}>
+    <Sheet title="持ち物チェックリスト" icon="pack" onClose={onClose}>
       <div className="small muted" style={{ marginTop: 10 }}>チェックは毎日リセットされます。</div>
       {state.checklists.map(c => editing === c.id ? (
         <ChecklistEditor key={c.id} list={c} onDone={() => { setEditing(null); reload(); }} />
@@ -289,9 +291,9 @@ export function GroupDrawer({ state, current, onPick, onClose, reload }: {
     onPick(g.id);
   }
   return (
-    <Sheet title="グループ" onClose={onClose}>
+    <Sheet title="グループ" icon="calendar" onClose={onClose}>
       <div style={{ marginTop: 8 }}>
-        <button className={'side-link' + (current === 'all' ? ' on' : '')} onClick={() => onPick('all')}>☑ すべて表示 <span className="count">色分けして重ねる</span></button>
+        <button className={'side-link' + (current === 'all' ? ' on' : '')} onClick={() => onPick('all')}><Icon name="calendar" size={19} />すべて表示 <span className="count">色分けして重ねる</span></button>
         {state.groups.map(g => (
           <button key={g.id} className={'side-link' + (current === g.id ? ' on' : '')} onClick={() => onPick(g.id)}>
             <span className="dot" style={{ background: g.color }} />{g.name}
@@ -334,7 +336,7 @@ export function MembersPanel({ state, group, onClose, reload, notify, onLeft }: 
     } catch { /* キャンセル */ }
   }
   return (
-    <Sheet title="メンバー・共有設定" onClose={onClose}>
+    <Sheet title="メンバー・共有設定" icon="users" onClose={onClose}>
       <div className="label">現在のグループ</div>
       <div className="row"><span className="dot" style={{ background: group.color }} /><b>{group.name}</b></div>
       {!group.is_personal && (
@@ -342,7 +344,7 @@ export function MembersPanel({ state, group, onClose, reload, notify, onLeft }: 
           <div className="label">メンバー（{group.members.length}人）</div>
           {group.members.map(m => <div key={m.id} className="li"><span className="grow">{m.name}{m.id === state.me!.id ? '（あなた）' : ''}</span></div>)}
           <div className="label">メンバーを招待</div>
-          <button className="btn primary block" onClick={copy}>🔗 招待リンクを送る／コピー</button>
+          <button className="btn primary block" onClick={copy}><Icon name="link" size={18} />招待リンクを送る／コピー</button>
           <div className="small muted" style={{ marginTop: 6, wordBreak: 'break-all' }}>{inviteUrl}</div>
         </>
       )}
@@ -384,8 +386,9 @@ function urlB64ToUint8Array(base64: string) {
 }
 
 export async function currentPushSub(): Promise<PushSubscription | null> {
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null;
-  const reg = await navigator.serviceWorker.getRegistration();
+  const c = sw();
+  if (!c || !('PushManager' in window)) return null;
+  const reg = await c.getRegistration();
   return (await reg?.pushManager.getSubscription()) || null;
 }
 
@@ -397,7 +400,7 @@ export function SettingsPanel({ state, onClose, notify }: { state: State; onClos
   const [devices, setDevices] = useState<{ device: string; last_used_at: string }[]>([]);
   const standalone = typeof window !== 'undefined' && (window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone);
   const ios = typeof navigator !== 'undefined' && /iPhone|iPad/.test(navigator.userAgent);
-  const supported = typeof window !== 'undefined' && 'PushManager' in window && 'serviceWorker' in navigator;
+  const supported = typeof window !== 'undefined' && 'PushManager' in window && !!sw() && !!state.pushKey;
 
   useEffect(() => { currentPushSub().then(setSub); api('devices').then(setDevices).catch(() => {}); }, []);
   useEffect(() => {
@@ -412,7 +415,7 @@ export function SettingsPanel({ state, onClose, notify }: { state: State; onClos
       setPerm(p);
       if (p !== 'granted') { notify('通知が許可されませんでした'); return; }
       if (!state.pushKey) { notify('サーバーの通知設定（VAPID）がまだです'); return; }
-      const reg = await navigator.serviceWorker.ready;
+      const reg = await sw()!.ready;
       const s = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8Array(state.pushKey) });
       await api('push/subscribe', 'POST', { subscription: s.toJSON() });
       setSub(s);
@@ -434,7 +437,7 @@ export function SettingsPanel({ state, onClose, notify }: { state: State; onClos
   }
 
   return (
-    <Sheet title="設定" onClose={onClose}>
+    <Sheet title="設定" icon="gear" onClose={onClose}>
       <div className="label">ログイン中</div>
       <div><b>{state.me!.name}</b> さん</div>
 
@@ -454,7 +457,7 @@ export function SettingsPanel({ state, onClose, notify }: { state: State; onClos
 
       <div className="label">この端末の通知</div>
       {!supported ? (
-        <div className="small muted">{ios && !standalone ? 'iPhoneでは、Safariの共有ボタン →「ホーム画面に追加」してから開くと通知を受け取れます。' : 'このブラウザはプッシュ通知に対応していません。アプリを開いている間は画面内でお知らせします。'}</div>
+        <div className="small muted">{!state.pushKey ? 'プッシュ通知はまだ使えません（サーバーの通知設定が必要）。アプリを開いている間は、時間になると画面に大きく表示します。' : ios && !standalone ? 'iPhoneでは、Safariの共有ボタン →「ホーム画面に追加」してから開くと通知を受け取れます。' : 'このブラウザはプッシュ通知に対応していません。アプリを開いている間は画面内でお知らせします。'}</div>
       ) : sub ? (
         <div className="row">
           <span className="grow small">🔔 オン（この端末に届きます）</span>
@@ -478,7 +481,7 @@ export function SettingsPanel({ state, onClose, notify }: { state: State; onClos
       <button className="btn danger block" onClick={async () => {
         if (!confirm('この端末からログアウトしますか？（もう一度入るには、他の端末でコードを出す必要があります）')) return;
         await api('auth/logout', 'POST');
-        location.href = '/';
+        location.reload();
       }}>この端末からログアウト</button>
     </Sheet>
   );
@@ -489,7 +492,7 @@ export function SettingsPanel({ state, onClose, notify }: { state: State; onClos
 export function NoticePanel({ state, onClose }: { state: State; onClose: () => void }) {
   useEffect(() => { api('notifications/read', 'POST', {}).catch(() => {}); }, []);
   return (
-    <Sheet title="🔔 お知らせ" onClose={onClose}>
+    <Sheet title="お知らせ" icon="bell" onClose={onClose}>
       {state.notifications.length === 0 && <div className="empty">お知らせはまだありません</div>}
       {state.notifications.map(n => (
         <div key={n.id} className={'notice' + (n.read_at ? '' : ' unread')}>

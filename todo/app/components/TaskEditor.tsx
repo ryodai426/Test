@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { KIND_PRESETS, REMINDER_LABELS, WEEK_LABELS, weekday, type Repeat } from '@/lib/time';
+import Icon from './Icon';
 import { api, hhmm, localToday, PALETTE, type State, type Task } from '../lib';
 
 export type EditorInit = { task?: Task; day?: string; time?: string; groupId?: string; kind?: string; occDay?: string; title?: string };
@@ -97,11 +98,11 @@ export default function TaskEditor({ state, init, onClose, onSaved }: {
       <div className="sheet" onClick={e => e.stopPropagation()}>
         <div className="sheet-head">
           <h3>{isDraft ? '未記入のメモ' : t ? '予定・タスク' : '新しい予定・タスク'}</h3>
-          <button className="icon-btn" onClick={onClose} aria-label="閉じる">✕</button>
+          <button className="icon-btn" onClick={onClose} aria-label="閉じる"><Icon name="close" size={20} /></button>
         </div>
         <div className="sheet-body">
           {isDraft && (
-            <div className="card" style={{ background: '#FFFBEB', borderColor: '#FDE68A' }}>
+            <div className="card" style={{ background: '#FFF6D6', borderColor: '#F2D98A' }}>
               <div className="small"><b>{hhmm(t!.captured_at)}</b> にメモしました。いつやるかを決めて保存すると、カレンダーに入ります。</div>
             </div>
           )}

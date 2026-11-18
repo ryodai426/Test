@@ -29,7 +29,17 @@ export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 
+/** Service Worker（使えない環境では undefined。埋め込み表示などでアクセス自体が例外になることがある） */
+export function sw(): ServiceWorkerContainer | undefined {
+  try { return 'serviceWorker' in navigator ? navigator.serviceWorker : undefined; } catch { return undefined; }
+}
+
+/** デモ版（サーバーなし）のときは、ブラウザ内の擬似サーバーに差し替える */
+export const isDemo = () => typeof globalThis !== 'undefined' && !!(globalThis as any).__DEMO_API__;
+
 export async function api<T = any>(path: string, method = 'GET', body?: unknown): Promise<T> {
+  const demo = (globalThis as any).__DEMO_API__;
+  if (demo) return demo(path, method, body);
   const res = await fetch('/api/' + path, {
     method,
     headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
@@ -80,4 +90,5 @@ export function occurrences(s: State, day: string, groupFilter: string): Occ[] {
     .sort((a, b) => (a.task.time || '').localeCompare(b.task.time || ''));
 }
 
-export const PALETTE = ['#EF4444', '#3B82F6', '#22C55E', '#F59E0B', '#A855F7', '#EC4899', '#14B8A6', '#6B7280'];
+// 森・湖・焚き火・夕日・木の実…アウトドアの色
+export const PALETTE = ['#2F7A55', '#3A7CA5', '#D9683A', '#E0A526', '#9C4F7A', '#7E9A3A', '#2A8C82', '#7A6A58'];
