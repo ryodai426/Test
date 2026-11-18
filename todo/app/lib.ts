@@ -102,7 +102,7 @@ export function occurrences(s: State, day: string, groupFilter: string, who?: st
     .filter(t => t.status === 'ready' && (groupFilter === 'all' || t.group_id === groupFilter) && isFor(t, person, s) && occursOn(t, day))
     .map(t => {
       const g = groups.get(t.group_id);
-      return { task: t, day, group: g, color: t.color || g?.color || '#6B7280', done: t.repeat ? doneSet.has(t.id + '|' + day) : !!t.done_at };
+      return { task: t, day, group: g, color: taskColor(t, s), done: t.repeat ? doneSet.has(t.id + '|' + day) : !!t.done_at };
     })
     .sort((a, b) => (a.task.time || '').localeCompare(b.task.time || ''));
 }
@@ -128,5 +128,27 @@ export function followupOf(s: State, taskId: string, day: string): Followup | un
   return (s.followups || []).find(f => f.task_id === taskId && f.occ_date === day);
 }
 
-// 参考サイトの色（緑・青・コーラル・黄・ライラック・ピーチ・茶・墨）
-export const PALETTE = ['#8ED462', '#2BA0FF', '#FF705D', '#F5E211', '#EBC1FF', '#FFBE9F', '#BF5622', '#2C2E2A'];
+// ---- 予定の色 ------------------------------------------------------------------
+// 個人の予定は黄色で固定。グループの予定は「表示する人」で決める（共通は緑、メンバーはそれぞれの色）。
+// 入力画面で色は選ばない（前に選んだ色 tasks.color は使わない）
+export const PERSONAL_COLOR = '#F5E211';
+export const COMMON_COLOR = '#8ED462';
+/** メンバーの色（黄色・緑を除いた10色。グループに入った順に割り当てる。11人目からは繰り返し） */
+export const MEMBER_COLORS = ['#2BA0FF', '#FF705D', '#A77BEA', '#FF9F43', '#A0522D', '#9AA0A6', '#17B5A6', '#34508F', '#F06292', '#EBC1FF'];
+/** グループ自体の色（左のメニューの点）。個人の黄色と重ならないように、メンバーの色から選ぶ */
+export const PALETTE = MEMBER_COLORS;
+
+/** そのグループで、その人の色 */
+export function memberColor(g: Group | undefined, userId: string): string {
+  const i = g ? g.members.findIndex(m => m.id === userId) : -1;
+  return i < 0 ? '#9AA0A6' : MEMBER_COLORS[i % MEMBER_COLORS.length];
+}
+
+/** 予定の色：個人＝黄、グループの共通＝緑、表示する人を選んだ予定＝その人の色（複数なら、グループに先に入った人） */
+export function taskColor(t: Pick<Task, 'group_id' | 'assignees'>, s: State): string {
+  const g = s.groups.find(x => x.id === t.group_id);
+  if (!g || g.is_personal) return PERSONAL_COLOR;
+  if (!t.assignees?.length) return COMMON_COLOR;
+  const first = g.members.find(m => t.assignees!.includes(m.id));
+  return first ? memberColor(g, first.id) : COMMON_COLOR;
+}

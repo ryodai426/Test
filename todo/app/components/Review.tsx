@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { addDays, KIND_PRESETS, WEEK_LABELS, weekday } from '@/lib/time';
-import { api, isFor, localDateOf, occurrences, type Occ, type State, type Task } from '../lib';
+import { api, isFor, localDateOf, occurrences, type Occ, type State, type Task, taskColor } from '../lib';
 import Emoji from './Emoji';
 import Icon, { Scene } from './Icon';
 import { act, P } from '../store';
@@ -45,14 +45,14 @@ function collect(state: State, today: string) {
     if (t.status !== 'ready' || t.repeat || !t.done_at || t.date === today || !isFor(t, me, state)) continue;
     if (localDateOf(t.done_at) !== today) continue;
     const g = groups.get(t.group_id);
-    done.push(toDone({ task: t, day: t.date || today, done: true, group: g, color: t.color || g?.color || '#6B7280' }));
+    done.push(toDone({ task: t, day: t.date || today, done: true, group: g, color: taskColor(t, state) }));
   }
   // 仲間のがんばり：共有グループで、今日ほかの人が完了したもの
   const team: Done[] = [];
   for (const t of state.tasks) {
     const g = groups.get(t.group_id);
     if (!g || g.is_personal || t.status !== 'ready') continue;
-    const color = t.color || g.color;
+    const color = taskColor(t, state);
     if (t.repeat) {
       for (const d of state.done) {
         if (d.task_id !== t.id || d.occ_date !== today || d.user_id === me) continue;
@@ -250,7 +250,7 @@ export function Review({ state, today, onClose, reload }: { state: State; today:
           {registered.map((t, i) => {
             const g = state.groups.find(x => x.id === t.group_id);
             return (
-              <Note key={t.id} i={i + 1} color={t.color || g?.color || '#EBC1FF'}>
+              <Note key={t.id} i={i + 1} color={taskColor(t, state)}>
                 <div className="brief-time">{t.status === 'draft' ? 'メモ' : t.date ? `${Number(t.date.slice(5, 7))}/${Number(t.date.slice(8))}` : 'いつか'}</div>
                 <div className="brief-title">{t.title || 'ひとことなし'}</div>
                 {t.status === 'draft' && t.description && <div className="memo-desc">{t.description}</div>}
