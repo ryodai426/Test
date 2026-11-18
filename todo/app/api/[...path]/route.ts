@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { q, one, tx } from '@/lib/db';
+import { q, one, tx, databaseUrl, pool, ready } from '@/lib/db';
 import { consumeLinkCode, createSession, currentUser, destroySession, issueLinkCode, type User } from '@/lib/auth';
 import { pushEnabled, pushTo, runDueReminders } from '@/lib/notify';
 import { KIND_PRESETS, nowIn } from '@/lib/time';
@@ -531,6 +531,34 @@ route('POST', 'push/test', async () => {
 });
 
 // 1分ごとに外部のスケジューラから呼ぶ（README 参照）
+// 設定の確認ページ：スマホで開くだけで、どこが足りないか分かる（秘密の値そのものは出さない）
+route('GET', 'health', async () => {
+  const db = databaseUrl();
+  const checks: Record<string, string> = {
+    'データベースの接続先': db ? `OK（${db.name}）` : 'NG：DATABASE_URL がありません。Vercel の Storage で Neon を追加し、Redeploy してください',
+    'プッシュ通知の鍵': pushEnabled() ? 'OK' : '未設定：VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY を入れて Redeploy（なくても動きます）',
+    '通知の送り元（VAPID_SUBJECT）': process.env.VAPID_SUBJECT ? 'OK' : '未設定（mailto:メールアドレス）',
+    '時間どおりの通知の合言葉（CRON_SECRET）': process.env.CRON_SECRET ? 'OK' : '未設定（なくても動きます）',
+  };
+  if (db) {
+    try {
+      await pool().query('SELECT 1');
+      checks['データベースにつながるか'] = 'OK';
+      try {
+        await ready();
+        const r = await pool().query("SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema = 'public'");
+        checks['表（テーブル）の準備'] = `OK（${r.rows[0].n}個）`;
+      } catch (e: any) {
+        checks['表（テーブル）の準備'] = 'NG：' + String(e?.message || e).slice(0, 200);
+      }
+    } catch (e: any) {
+      checks['データベースにつながるか'] = 'NG：' + String(e?.message || e).slice(0, 200);
+    }
+  }
+  const ok = Object.values(checks).every(v => !v.startsWith('NG'));
+  return { ok, checks };
+});
+
 route('GET', 'cron', async ({ req, url }) => {
   const secret = process.env.CRON_SECRET;
   const given = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') || url.searchParams.get('key');
@@ -558,7 +586,9 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
       if (e instanceof HttpError) return NextResponse.json({ error: e.message }, { status: e.status });
       if (e?.code === '22P02') return NextResponse.json({ error: '見つかりません' }, { status: 404 }); // 不正な uuid
       console.error(e);
-      return NextResponse.json({ error: 'サーバーでエラーが起きました' }, { status: 500 });
+      // 原因の手がかりを短く添える（設定の確認は /api/health）
+      const hint = String(e?.message || '').slice(0, 120);
+      return NextResponse.json({ error: `サーバーでエラーが起きました${hint ? '：' + hint : ''}（設定の確認：/api/health）` }, { status: 500 });
     }
   }
   return NextResponse.json({ error: 'not found' }, { status: 404 });

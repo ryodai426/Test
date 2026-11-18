@@ -56,7 +56,7 @@ todo/
     components/Login.tsx    はじめる／コードでログイン
     api/[...path]/route.ts  API（すべてここ）
   lib/
-    schema.sql              DB設計
+    schema.ts               DB設計（初回に自動で実行）
     time.ts                 繰り返し・リマインド時刻の計算（サーバーと画面で共通）
     notify.ts               プッシュ通知と、1分ごとのリマインド送信
     auth.ts                 端末ごとのログイン・6桁コード

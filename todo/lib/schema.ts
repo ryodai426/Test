@@ -1,3 +1,6 @@
+// DB設計。初回にアプリが自動で実行する（何度実行しても安全）。
+// 手で流したいときは npm run db:migrate
+export const SCHEMA_SQL = `
 -- わすれないYO スキーマ（何度実行しても安全）
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
@@ -156,3 +159,4 @@ CREATE TABLE IF NOT EXISTS auth_failures (
   at  timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS auth_failures_idx ON auth_failures(ip, at);
+`;
