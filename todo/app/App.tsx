@@ -419,7 +419,7 @@ export default function App() {
         </div>
         <button className="btn primary block big" onClick={() => setEditor({ day: cursor, groupId: groupFilter !== 'all' ? groupFilter : undefined })}>予定・タスクを追加<span className="orb"><Icon name="plus" size={20} stroke={2.4} /></span></button>
         <div style={{ height: 8 }} />
-        <button className="side-link" onClick={() => setMemoBoard(true)}><Icon name="memo" size={19} />メモを見る {drafts.length > 0 && <span className="memo-badge" aria-label={`メモ${drafts.length}枚`}>{drafts.length}</span>}</button>
+        <button className="side-link" onClick={() => setMemoBoard(true)}><Icon name="memo" size={19} />メモを見る {drafts.length > 0 && <span className="count alert" aria-label={`メモ${drafts.length}枚`}>{drafts.length}</span>}</button>
         <button className="side-link" onClick={() => setPanel('shopping')}><Icon name="cart" size={19} />買い物リスト <span className="count">{shoppingOpen.length || ''}</span></button>
         <button className="side-link" onClick={() => setPanel('checklists')}><Icon name="pack" size={19} />持ち物チェック</button>
         <button className="side-link" onClick={() => setReview(true)}><Icon name="check" size={19} />今日の振り返り</button>
@@ -502,7 +502,7 @@ export default function App() {
 
         {/* ---------- スマホ：下のボタン ---------- */}
         <nav className="bottombar">
-          <button onClick={() => setMemoBoard(true)}><span className="i"><Icon name="memo" /></span>メモ{drafts.length > 0 && <span className="badge memo-badge-sm">{drafts.length}</span>}</button>
+          <button onClick={() => setMemoBoard(true)}><span className="i"><Icon name="memo" /></span>メモ{drafts.length > 0 && <span className="badge">{drafts.length}</span>}</button>
           <button onClick={() => setPanel('shopping')}><span className="i"><Icon name="cart" /></span>買い物</button>
           <button className="capture-btn" onClick={openCapture} aria-label="ひとことメモ"><span className="i"><Icon name="plus" size={28} stroke={2.6} /></span>メモ</button>
           <button onClick={() => setPanel('checklists')}><span className="i"><Icon name="pack" /></span>持ち物</button>

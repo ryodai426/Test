@@ -474,11 +474,6 @@ b, strong { font-weight: var(--w-head); }
 .sel-range { position: absolute; left: 2px; right: 2px; background: rgba(142, 212, 98, .35); border: 2px solid var(--green); border-radius: 10px; z-index: 3; pointer-events: none; display: flex; align-items: flex-start; justify-content: center; }
 .sel-range span { margin-top: 4px; background: var(--ink); color: #fff; font-size: 12px; padding: 3px 9px; border-radius: 999px; white-space: nowrap; box-shadow: 0 4px 10px rgba(44, 46, 42, .2); }
 
-/* ---- メモの数：赤い丸で強調 ---- */
-.memo-badge { margin-left: auto; min-width: 22px; height: 22px; padding: 0 7px; border-radius: 11px; background: #E5322D; color: #fff; font-size: 12.5px; display: inline-flex; align-items: center; justify-content: center; font-weight: var(--w-head); box-shadow: 0 0 0 3px rgba(229, 50, 45, .18); animation: memo-pulse 2.4s ease-in-out infinite; }
-.badge.memo-badge-sm { background: #E5322D; color: #fff; animation: memo-pulse 2.4s ease-in-out infinite; }
-@keyframes memo-pulse { 0%, 100% { box-shadow: 0 0 0 2px var(--card), 0 0 0 3px rgba(229, 50, 45, .0); } 50% { box-shadow: 0 0 0 2px var(--card), 0 0 0 7px rgba(229, 50, 45, .22); } }
-
 /* ---- お知らせの「今日の振り返り」 ---- */
 .notice-review { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: var(--yellow); border-radius: 16px; padding: 12px 14px; margin: 8px 0 6px; border-bottom: 0; }
 .notice-review .grow { display: flex; flex-direction: column; gap: 2px; }
