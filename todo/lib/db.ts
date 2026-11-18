@@ -1,6 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { Pool, type PoolClient } from 'pg';
+import { SCHEMA_SQL } from './schema';
 
 declare global {
   // 開発中のホットリロードで接続が増えないように使い回す
@@ -8,11 +7,24 @@ declare global {
   var __pgReady: Promise<void> | undefined;
 }
 
+/**
+ * データベースの接続先。Vercel の Neon 連携は DATABASE_URL のほか POSTGRES_URL や
+ * 「接頭辞_DATABASE_URL」の名前で入れることがあるので、それも探す。
+ */
+export function databaseUrl(): { name: string; url: string } | null {
+  const env = process.env;
+  for (const name of ['DATABASE_URL', 'POSTGRES_URL']) if (env[name]) return { name, url: env[name]! };
+  const name = Object.keys(env).find(k => /(_DATABASE_URL|_POSTGRES_URL)$/.test(k) && !/UNPOOLED|NON_POOLING/.test(k) && env[k]);
+  return name ? { name, url: env[name]! } : null;
+}
+
 function makePool() {
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error('DATABASE_URL が設定されていません');
-  const local = /localhost|127\.0\.0\.1/.test(url);
-  return new Pool({ connectionString: url, ssl: local ? false : { rejectUnauthorized: false }, max: 5 });
+  const found = databaseUrl();
+  if (!found) throw new Error('DATABASE_URL が設定されていません（Vercel の Storage で Neon を追加し、Redeploy してください）');
+  const local = /localhost|127\.0\.0\.1/.test(found.url);
+  // URL に sslmode が書いてあればそれに従う。なければ、ローカル以外は暗号化して接続
+  const ssl = local ? false : /sslmode=/.test(found.url) ? undefined : { rejectUnauthorized: false };
+  return new Pool({ connectionString: found.url, ssl, max: 5, connectionTimeoutMillis: 10000 });
 }
 
 export function pool(): Pool {
@@ -22,17 +34,16 @@ export function pool(): Pool {
 
 /**
  * 初めて使うときに、表（テーブル）を自動で作る。
- * schema.sql は何度実行しても安全なので、デプロイ後に手作業で SQL を流す必要はない。
+ * スキーマ（lib/schema.ts）は何度実行しても安全なので、デプロイ後に手作業で SQL を流す必要はない。
  */
-function ready(): Promise<void> {
+export function ready(): Promise<void> {
   if (!globalThis.__pgReady) {
     globalThis.__pgReady = (async () => {
-      const sql = readFileSync(join(process.cwd(), 'lib', 'schema.sql'), 'utf8');
       const c = await pool().connect();
       try {
         await c.query('BEGIN');
         await c.query('SELECT pg_advisory_xact_lock(8124301)'); // 同時に複数のサーバーが作ろうとしても1つずつ
-        await c.query(sql);
+        await c.query(SCHEMA_SQL);
         await c.query('COMMIT');
       } catch (e) {
         await c.query('ROLLBACK').catch(() => {});
