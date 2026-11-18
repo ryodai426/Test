@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS groups (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name          text NOT NULL,
   description   text NOT NULL DEFAULT '',
-  color         text NOT NULL DEFAULT '#2E9BFF',
+  color         text NOT NULL DEFAULT '#2BA0FF',
   is_personal   boolean NOT NULL DEFAULT false,
   owner_id      uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   invite_token  text NOT NULL UNIQUE DEFAULT encode(gen_random_bytes(12), 'hex'),

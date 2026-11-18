@@ -66,7 +66,7 @@ function TimedColumn({ day, list, isToday, nowMin, onOpen, onNew, compact }: {
           style={{
             top: (s / 60) * hourPx + 1, height: Math.max(22, ((e - s) / 60) * hourPx - 2),
             left: `calc(${(lane / lanes) * 100}% + 2px)`, width: `calc(${100 / lanes}% - 4px)`, right: 'auto',
-            background: o.color + '33',
+            background: o.color + '4d',
           }}
           onClick={ev => { ev.stopPropagation(); onOpen(o); }}>
           <div className="t">{compact ? '' : KIND_PRESETS[o.task.kind]?.icon + ' '}{o.task.title}</div>
@@ -104,7 +104,7 @@ export function DayView(p: Props) {
             {untimed.map(o => (
               <div key={o.task.id} className="row">
                 <button className={'check' + (o.done ? ' on' : '')} onClick={() => p.onToggle(o)} aria-label="完了">{o.done ? '✓' : ''}</button>
-                <button className={'pill' + (o.done ? ' done' : '')} style={{ background: o.color + '33' }} onClick={() => p.onOpen(o)}>
+                <button className={'pill' + (o.done ? ' done' : '')} style={{ background: o.color + '4d' }} onClick={() => p.onOpen(o)}>
                   <span className="dot" style={{ background: o.color }} />{KIND_PRESETS[o.task.kind]?.icon} {o.task.title}
                 </button>
               </div>
@@ -151,7 +151,7 @@ export function WeekView(p: Props) {
           {lists.map((l, i) => (
             <div key={i} className="allday-cell">
               {l.filter(o => !o.task.time).map(o => (
-                <button key={o.task.id} className={'pill' + (o.done ? ' done' : '')} style={{ background: o.color + '33' }} onClick={() => p.onOpen(o)}>
+                <button key={o.task.id} className={'pill' + (o.done ? ' done' : '')} style={{ background: o.color + '4d' }} onClick={() => p.onOpen(o)}>
                   <span className="dot" style={{ background: o.color, width: 6, height: 6 }} />{o.task.title}
                 </button>
               ))}
@@ -188,7 +188,7 @@ export function MonthView(p: Props) {
               {list.slice(0, 6).map(o => <span key={o.task.id} className="dot" style={{ background: o.color, width: 7, height: 7, opacity: o.done ? .35 : 1 }} />)}
             </div>
             {list.slice(0, 3).map(o => (
-              <span key={o.task.id} className="mtitle" style={{ background: o.color + '33', textDecoration: o.done ? 'line-through' : undefined, opacity: o.done ? .5 : 1 }}>
+              <span key={o.task.id} className="mtitle" style={{ background: o.color + '4d', textDecoration: o.done ? 'line-through' : undefined, opacity: o.done ? .5 : 1 }}>
                 {o.task.time ? o.task.time + ' ' : ''}{o.task.title}
               </span>
             ))}

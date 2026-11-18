@@ -41,7 +41,7 @@ export function Logo({ size = 34 }: { size?: number }) {
 /** 丘・雲・太陽・テント・木の絵。onGreen は緑の面の上で使うとき */
 export function Scene({ onGreen = false, className = 'scene' }: { onGreen?: boolean; className?: string }) {
   const ink = { stroke: 'var(--ink)', strokeWidth: 2, strokeLinejoin: 'round' as const, strokeLinecap: 'round' as const };
-  const back = onGreen ? '#B8E58F' : '#DDF1C8';
+  const back = onGreen ? 'var(--green-2)' : 'var(--green-pale)';
   const front = onGreen ? 'var(--cream)' : 'var(--green)';
   const cloud = (x: number, y: number, k = 1) => (
     <g transform={`translate(${x} ${y}) scale(${k})`} style={{ fill: '#fff' }}>
@@ -51,7 +51,7 @@ export function Scene({ onGreen = false, className = 'scene' }: { onGreen?: bool
   const tree = (x: number, y: number, k = 1) => (
     <g transform={`translate(${x} ${y}) scale(${k})`}>
       <path d="M0 0v12" {...ink} fill="none" />
-      <path d="M-14 2 0-30 14 2z" style={{ fill: onGreen ? 'var(--green)' : '#5DB33C' }} {...ink} />
+      <path d="M-14 2 0-30 14 2z" style={{ fill: onGreen ? 'var(--green)' : 'var(--green-2)' }} {...ink} />
       <path d="M-5-10l5 4 5-4" fill="none" {...ink} strokeWidth={1.6} />
     </g>
   );

@@ -116,7 +116,7 @@ route('POST', 'auth/register', async ({ req, body }) => {
     const u = (await c.query('INSERT INTO users (name, tz) VALUES ($1, $2) RETURNING id', [name, tz])).rows[0];
     const g = (await c.query(
       `INSERT INTO groups (name, color, is_personal, owner_id, notify_create, notify_done)
-       VALUES ('個人（自分専用）', '#E8C21E', true, $1, false, false) RETURNING id`, [u.id])).rows[0];
+       VALUES ('個人（自分専用）', '#F5E211', true, $1, false, false) RETURNING id`, [u.id])).rows[0];
     await c.query('INSERT INTO memberships (group_id, user_id) VALUES ($1, $2)', [g.id, u.id]);
     // よく使う持ち物チェックリストを最初から用意しておく（テンプレート）
     const seeds: [string, string, string | null, string[]][] = [
@@ -378,7 +378,7 @@ route('POST', 'groups', async ({ body }) => {
   if (!name) throw bad('グループ名を入力してください');
   const g = await tx(async c => {
     const g = (await c.query('INSERT INTO groups (name, description, color, owner_id) VALUES ($1,$2,$3,$4) RETURNING id',
-      [name, str(body.description, 200), COLORS.test(body.color) ? body.color : '#2E9BFF', u.id])).rows[0];
+      [name, str(body.description, 200), COLORS.test(body.color) ? body.color : '#2BA0FF', u.id])).rows[0];
     await c.query('INSERT INTO memberships (group_id, user_id) VALUES ($1,$2)', [g.id, u.id]);
     return g;
   });
