@@ -4,6 +4,7 @@ import { addDays, DRAFT_STEPS, occursOn, reminderMessage, reminderTimes, KIND_PR
 import { api, ApiError, isDemo, sw, localToday, occurrences, type Checklist, type Occ, type State, type Task } from './lib';
 import Login from './components/Login';
 import Icon, { Logo, Scene } from './components/Icon';
+import Emoji, { EmojiText } from './components/Emoji';
 import { DayView, MonthView, WeekView, periodLabel } from './components/Calendar';
 import TaskEditor, { type EditorInit } from './components/TaskEditor';
 import {
@@ -294,7 +295,7 @@ export default function App() {
     <div className="shell">
       {/* ---------- PC：左のサイドバー ---------- */}
       <aside className="sidebar">
-        <div className="brand"><Logo size={34} /><div><b>わすれないTODO</b><small>{isDemo() ? 'Trail Notes · Demo' : 'Trail Notes'}</small></div></div>
+        <div className="brand"><Logo size={34} /><div><b>わすれないYO</b><small>{isDemo() ? 'Trail Notes · Demo' : 'Trail Notes'}</small></div></div>
         <div className="capture-box">
           <label className="cap-label" htmlFor="side-capture">思いついたら、すぐメモ</label>
           <input id="side-capture" ref={sideCaptureRef} type="text" placeholder="ひとことだけでOK" value={capture} onChange={e => setCapture(e.target.value)}
@@ -349,7 +350,7 @@ export default function App() {
             ))}
           </div>
           <span className="period grow">{periodLabel(view, cursor)}
-            {view === 'day' && todayList.length > 0 && <span className="small only-pc" style={{ fontWeight: 500, marginLeft: 10, opacity: .7, letterSpacing: '.06em' }}>{todayList.filter(o => o.done).length}/{todayList.length} 完了</span>}
+            {view === 'day' && todayList.length > 0 && <span className="small only-pc" style={{ marginLeft: 10, opacity: .7 }}>{todayList.filter(o => o.done).length}/{todayList.length} 完了</span>}
           </span>
           <button className="icon-btn" onClick={() => move(-1)} aria-label="前へ"><Icon name="left" size={20} /></button>
           <button className="btn small" onClick={() => setCursor(localToday())}>今日</button>
@@ -422,7 +423,7 @@ export default function App() {
         {stickies.map(s => (
           <div key={s.key} className={'sticky ' + s.kind}>
             <button className="x" onClick={() => dismiss(s.key)} aria-label="閉じる">×</button>
-            <div style={{ paddingRight: 16 }}>{s.kind === 'done' ? '🎉 ' : s.kind === 'created' ? '✨ ' : s.kind === 'draft' ? '📋 ' : '💬 '}{s.body}</div>
+            <div style={{ paddingRight: 16 }}><span className="sticky-ico"><Emoji char={s.kind === 'done' ? '🎉' : s.kind === 'created' ? '✨' : s.kind === 'draft' ? '📋' : '💬'} size={22} /></span><EmojiText text={s.body} /></div>
             {s.kind === 'done' && s.taskId && (
               <div className="emojis">
                 {['👍', '❤️', '💪', '👏'].map(em => (
@@ -430,7 +431,7 @@ export default function App() {
                     await api('reactions', 'POST', { task_id: s.taskId, occ_date: s.occDate, emoji: em }).catch(() => {});
                     dismiss(s.key);
                     notify(`${em} を送りました`);
-                  }}>{em}</button>
+                  }} aria-label={em}><Emoji char={em} size={24} /></button>
                 ))}
               </div>
             )}
@@ -451,7 +452,7 @@ export default function App() {
       {banner && (
         <div className="banner" onClick={() => setBanner(null)}>
           <div className="banner-card" onClick={e => e.stopPropagation()}>
-            <div className="big">{banner.icon}</div>
+            <div className="big"><Emoji char={banner.icon} size={46} /></div>
             <h2>{banner.title}</h2>
             <div className="muted">{banner.body}</div>
             <button className="btn primary block" style={{ marginTop: 18 }} onClick={() => { setBanner(null); if (banner.icon === '📋') setPanel('drafts'); }}>
@@ -461,7 +462,7 @@ export default function App() {
         </div>
       )}
 
-      {toast && <div className="toast">{toast}</div>}
+      {toast && <div className="toast"><EmojiText text={toast} /></div>}
     </div>
   );
 }

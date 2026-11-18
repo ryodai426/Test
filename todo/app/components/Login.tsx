@@ -35,7 +35,7 @@ export default function Login({ onDone, initialCode }: { onDone: () => void; ini
         <p>思いついたらひとことメモ。時間になったら知らせる。家族やチームとも共有できるタスク帳です。</p>
       </div>
       <form className="login-card" onSubmit={submit}>
-        <div className="login-mark"><Logo size={34} />わすれないTODO</div>
+        <div className="login-mark"><Logo size={34} />わすれないYO</div>
         {mode === 'new' ? (
           <>
             <p className="muted">はじめに、あなたの名前を決めてください。</p>
@@ -51,7 +51,7 @@ export default function Login({ onDone, initialCode }: { onDone: () => void; ini
         ) : (
           <>
             <p className="muted">
-              すでに使っている端末で <b>⚙ 設定 →「この端末以外でも使う」</b> を開くと、6桁のコードが出ます。それを入力してください。
+              すでに使っている端末で <b>設定 →「この端末以外でも使う」</b> を開くと、6桁のコードが出ます。それを入力してください。
             </p>
             <input type="text" inputMode="numeric" autoComplete="one-time-code" className="code-input" placeholder="000000"
               value={code} onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} autoFocus />

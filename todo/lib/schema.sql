@@ -1,4 +1,4 @@
--- わすれないTODO スキーマ（何度実行しても安全）
+-- わすれないYO スキーマ（何度実行しても安全）
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE IF NOT EXISTS users (

@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { WEEK_LABELS } from '@/lib/time';
 import Icon, { Scene } from './Icon';
+import Emoji, { EmojiText } from './Emoji';
 import { sw, api, fmtJpDate, hhmm, localDateOf, localToday, PALETTE, type Checklist, type Group, type State, type Task } from '../lib';
 
 function Sheet({ title, icon, onClose, children, foot, side = true }: { title: string; icon?: string; onClose: () => void; children: React.ReactNode; foot?: React.ReactNode; side?: boolean }) {
@@ -26,14 +27,14 @@ export function DraftsPanel({ state, onClose, onOpen, reload }: { state: State; 
     .sort((a, b) => b.captured_at.localeCompare(a.captured_at));
   return (
     <Sheet title="未記入のメモ" icon="memo" onClose={onClose}>
-      <div className="small muted" style={{ marginTop: 10 }}>🔒 自分にしか見えません。押すと詳細を入力できます。</div>
-      {drafts.length === 0 && <div className="empty">未記入のメモはありません 🎉</div>}
+      <div className="small muted" style={{ marginTop: 10 }}><Emoji char="🔒" size={16} /> 自分にしか見えません。押すと詳細を入力できます。</div>
+      {drafts.length === 0 && <div className="empty">未記入のメモはありません <Emoji char="🎉" size={18} /></div>}
       {drafts.map(t => (
         <div key={t.id} className="row">
           <button className="draft grow" onClick={() => onOpen(t)}>
             <div className="grow">
               <div className="time">{localDateOf(t.captured_at) === localToday() ? '今日' : fmtJpDate(localDateOf(t.captured_at))} {hhmm(t.captured_at)} に記録</div>
-              <div style={{ fontWeight: 700, marginTop: 2 }}>{t.title || <span className="muted">（ひとことなし）</span>}</div>
+              <div style={{ marginTop: 2 }}>{t.title || <span className="muted">（ひとことなし）</span>}</div>
             </div>
             <span className="muted small">詳細を入力 ›</span>
           </button>
@@ -91,7 +92,7 @@ export function ShoppingPanel({ state, groupFilter, onClose, reload, onShoppingD
         <div style={{ marginTop: 6 }}>
           {[...items].sort((a, b) => Number(a.checked) - Number(b.checked) || a.position - b.position).map(i => (
             <div key={i.id} className={'li' + (i.checked ? ' on' : '')}>
-              <button className={'box' + (i.checked ? ' on' : '')} onClick={() => toggle(i.id, !i.checked)}>{i.checked ? '✓' : ''}</button>
+              <button className={'box' + (i.checked ? ' on' : '')} onClick={() => toggle(i.id, !i.checked)} aria-label="チェック">{i.checked && <Icon name="check" size={15} stroke={2.6} />}</button>
               <span className="grow" onClick={() => toggle(i.id, !i.checked)}>{i.label}</span>
               <button className="del" onClick={async () => { await api(`items/${i.id}`, 'DELETE'); reload(); }} aria-label="削除">×</button>
             </div>
@@ -115,7 +116,7 @@ export function ShoppingPanel({ state, groupFilter, onClose, reload, onShoppingD
       {open.length === 0 && <div className="empty">買い物リストはありません</div>}
       {open.map(renderList)}
       <div className="card soft">
-        <div className="small" style={{ fontWeight: 700, marginBottom: 8 }}>＋ 新しい買い物リスト</div>
+        <div className="small" style={{ marginBottom: 8 }}>＋ 新しい買い物リスト</div>
         <input type="text" placeholder="例：今日の買い物、週末の買い物" value={newName} onChange={e => setNewName(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) create(); }} />
         <div className="row wrap" style={{ marginTop: 8 }}>
@@ -170,7 +171,7 @@ export function FullChecklist({ list, onClose, reload }: { list: Checklist; onCl
       <div className="items">
         {items.map(i => (
           <button key={i.id} className={'it' + (i.checked ? ' on' : '')} onClick={() => flip(i.id)}>
-            <span className={'box' + (i.checked ? ' on' : '')}>{i.checked ? '✓' : ''}</span>{i.label}
+            <span className={'box' + (i.checked ? ' on' : '')}>{i.checked && <Icon name="check" size={18} stroke={2.6} />}</span>{i.label}
           </button>
         ))}
         {items.length === 0 && <div className="empty" style={{ color: 'var(--ink)' }}>項目がありません。「持ち物」から追加できます。</div>}
@@ -207,8 +208,8 @@ function ChecklistEditor({ list, onDone }: { list?: Checklist; onDone: () => voi
       <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="例：家を出る時、会議の日" />
       <div className="label">いつ表示する？</div>
       <div className="row wrap">
-        <button className={'chip' + (trigger === 'time' ? ' on' : '')} onClick={() => setTrigger('time')}>⏰ 決まった時間</button>
-        <button className={'chip' + (trigger === 'after_shopping' ? ' on' : '')} onClick={() => setTrigger('after_shopping')}>🛒 買い物が終わったら</button>
+        <button className={'chip' + (trigger === 'time' ? ' on' : '')} onClick={() => setTrigger('time')}><Emoji char="⏰" size={18} />&nbsp;決まった時間</button>
+        <button className={'chip' + (trigger === 'after_shopping' ? ' on' : '')} onClick={() => setTrigger('after_shopping')}><Emoji char="🛒" size={18} />&nbsp;買い物が終わったら</button>
         <button className={'chip' + (trigger === 'manual' ? ' on' : '')} onClick={() => setTrigger('manual')}>自分で開く</button>
       </div>
       {trigger === 'time' && (
@@ -266,7 +267,7 @@ export function ChecklistPanel({ state, onClose, reload, onOpenFull }: { state: 
           <div className="small muted" style={{ marginBottom: 4 }}>{triggerText(c)}</div>
           {c.items.map(i => (
             <div key={i.id} className={'li' + (i.checked ? ' on' : '')}>
-              <button className={'box' + (i.checked ? ' on' : '')} onClick={async () => { await toggleCheck(i.id, !i.checked); reload(); }}>{i.checked ? '✓' : ''}</button>
+              <button className={'box' + (i.checked ? ' on' : '')} onClick={async () => { await toggleCheck(i.id, !i.checked); reload(); }} aria-label="チェック">{i.checked && <Icon name="check" size={15} stroke={2.6} />}</button>
               <span className="grow">{i.label}</span>
             </div>
           ))}
@@ -458,7 +459,7 @@ export function SettingsPanel({ state, onClose, notify }: { state: State; onClos
       ) : <button className="btn primary block" onClick={issue}>6桁のコードを出す</button>}
       {devices.length > 0 && (
         <div style={{ marginTop: 10 }}>
-          {devices.map((d, i) => <div key={i} className="li small"><span className="grow">💻 {d.device}</span><span className="muted">{fmtJpDate(localDateOf(d.last_used_at), false)} 最終利用</span></div>)}
+          {devices.map((d, i) => <div key={i} className="li small"><span className="grow"><Emoji char="💻" size={18} /> {d.device}</span><span className="muted">{fmtJpDate(localDateOf(d.last_used_at), false)} 最終利用</span></div>)}
         </div>
       )}
 
@@ -467,13 +468,13 @@ export function SettingsPanel({ state, onClose, notify }: { state: State; onClos
         <div className="small muted">{!state.pushKey ? 'プッシュ通知はまだ使えません（サーバーの通知設定が必要）。アプリを開いている間は、時間になると画面に大きく表示します。' : ios && !standalone ? 'iPhoneでは、Safariの共有ボタン →「ホーム画面に追加」してから開くと通知を受け取れます。' : 'このブラウザはプッシュ通知に対応していません。アプリを開いている間は画面内でお知らせします。'}</div>
       ) : sub ? (
         <div className="row">
-          <span className="grow small">🔔 オン（この端末に届きます）</span>
+          <span className="grow small"><Emoji char="🔔" size={18} /> オン（この端末に届きます）</span>
           <button className="btn small" onClick={async () => { const r = await api('push/test', 'POST'); notify(r.sent ? 'テスト通知を送りました' : '送れませんでした'); }}>テスト</button>
           <button className="btn small" onClick={disablePush}>オフ</button>
         </div>
       ) : (
         <>
-          <button className="btn primary block" onClick={enablePush} disabled={perm === 'denied'}>🔔 この端末で通知を受け取る</button>
+          <button className="btn primary block" onClick={enablePush} disabled={perm === 'denied'}><Emoji char="🔔" size={20} />この端末で通知を受け取る</button>
           {perm === 'denied' && <div className="small err">ブラウザの設定で通知がブロックされています。サイトの設定から許可してください。</div>}
         </>
       )}
@@ -503,7 +504,7 @@ export function NoticePanel({ state, onClose }: { state: State; onClose: () => v
       {state.notifications.length === 0 && <div className="empty">お知らせはまだありません</div>}
       {state.notifications.map(n => (
         <div key={n.id} className={'notice' + (n.read_at ? '' : ' unread')}>
-          <div>{n.kind === 'done' ? '🎉 ' : n.kind === 'created' ? '✨ ' : '💬 '}{n.body}</div>
+          <div><Emoji char={n.kind === 'done' ? '🎉' : n.kind === 'created' ? '✨' : '💬'} size={18} /> <EmojiText text={n.body} /></div>
           <div className="small muted">{fmtJpDate(localDateOf(n.created_at), false)} {hhmm(n.created_at)}</div>
         </div>
       ))}

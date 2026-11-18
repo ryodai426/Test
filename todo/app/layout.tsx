@@ -2,10 +2,10 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'わすれないTODO',
+  title: 'わすれないYO',
   description: '忘れる前に気づかせる、共同タスク管理アプリ',
   manifest: '/manifest.webmanifest',
-  appleWebApp: { capable: true, title: 'わすれない', statusBarStyle: 'default' },
+  appleWebApp: { capable: true, title: 'わすれないYO', statusBarStyle: 'default' },
   icons: { icon: '/icon-192.png', apple: '/apple-touch-icon.png' },
   robots: { index: false, follow: false }, // URLを知っている人だけが使う前提なので検索に出さない
 };
@@ -24,7 +24,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         {/* eslint-disable-next-line @next/next/no-page-custom-font */}
-        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@500;600;700;800;900&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" />
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@600;700&display=swap" />
       </head>
       <body>{children}</body>
     </html>

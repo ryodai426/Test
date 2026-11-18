@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { KIND_PRESETS, REMINDER_LABELS, WEEK_LABELS, weekday, type Repeat } from '@/lib/time';
 import Icon from './Icon';
+import Emoji from './Emoji';
 import { api, hhmm, localToday, PALETTE, type State, type Task } from '../lib';
 
 export type EditorInit = { task?: Task; day?: string; time?: string; groupId?: string; kind?: string; occDay?: string; title?: string };
@@ -123,7 +124,7 @@ export default function TaskEditor({ state, init, onClose, onSaved }: {
           <div className="label">種類</div>
           <div className="row wrap">
             {Object.entries(KIND_PRESETS).map(([k, v]) => (
-              <button key={k} className={'chip' + (k === kind ? ' on' : '')} onClick={() => pickKind(k)}>{v.icon} {v.label}</button>
+              <button key={k} className={'chip' + (k === kind ? ' on' : '')} onClick={() => pickKind(k)}><Emoji char={v.icon} size={18} />&nbsp;{v.label}</button>
             ))}
           </div>
 
