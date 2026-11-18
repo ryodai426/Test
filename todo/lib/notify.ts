@@ -1,12 +1,54 @@
 import { q } from './db';
 import { DRAFT_STEPS, nowIn, occursOn, addDays, reminderMessage, reminderTimes, zonedToUtc, weekday, type Repeat } from './time';
 
-export const pushEnabled = () => !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY);
+import { createECDH } from 'crypto';
+
+/** 環境変数の値を整える（貼り付けたときに入りがちな空白・改行・引用符・「VAPID_PUBLIC_KEY=」を取り除く） */
+function cleanKey(v: string | undefined): string {
+  return (v || '').trim().replace(/^[A-Z_]+=/, '').replace(/^["']|["']$/g, '').replace(/\s+/g, '');
+}
+function b64urlBytes(s: string): Buffer | null {
+  try { return Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64'); } catch { return null; }
+}
+
+export function vapid() {
+  const publicKey = cleanKey(process.env.VAPID_PUBLIC_KEY).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+  const privateKey = cleanKey(process.env.VAPID_PRIVATE_KEY).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+  // 送り元は mailto: か https:// の形でないと送れない。ドメインだけなら https:// を付ける
+  let subject = (process.env.VAPID_SUBJECT || '').trim().replace(/^["']|["']$/g, '');
+  if (!subject) subject = 'mailto:admin@example.com';
+  else if (/^[^@\s]+@[^@\s]+$/.test(subject)) subject = 'mailto:' + subject;
+  else if (!/^(mailto:|https:\/\/)/.test(subject)) subject = 'https://' + subject.replace(/^http:\/\//, '');
+  return { publicKey, privateKey, subject };
+}
+
+/** 鍵に問題があれば、その説明（日本語）。問題なければ null */
+export function vapidProblem(): string | null {
+  const { publicKey, privateKey } = vapid();
+  if (!publicKey || !privateKey) return '未設定：VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY を入れて Redeploy してください';
+  const pub = b64urlBytes(publicKey);
+  const priv = b64urlBytes(privateKey);
+  if (!pub || pub.length !== 65 || pub[0] !== 4) {
+    if (priv && priv.length === 65 && pub && pub.length === 32) return 'NG：VAPID_PUBLIC_KEY と VAPID_PRIVATE_KEY が逆に入っています。入れ替えて Redeploy してください';
+    return `NG：VAPID_PUBLIC_KEY の形が違います（長さ ${publicKey.length} 文字。正しくは87文字）。鍵を作り直して入れ直してください`;
+  }
+  if (!priv || priv.length !== 32) return `NG：VAPID_PRIVATE_KEY の形が違います（長さ ${privateKey.length} 文字。正しくは43文字）`;
+  try {
+    const ecdh = createECDH('prime256v1');
+    ecdh.setPrivateKey(priv);
+    if (!ecdh.getPublicKey().equals(pub)) return 'NG：VAPID_PUBLIC_KEY と VAPID_PRIVATE_KEY が組になっていません（別々に作った鍵）。同じときに作った2つを入れてください';
+  } catch {
+    return 'NG：VAPID_PRIVATE_KEY が正しくありません';
+  }
+  return null;
+}
+
+export const pushEnabled = () => vapidProblem() === null;
 
 type Payload = { title: string; body: string; url?: string; tag?: string; confirm?: { taskId: string; day: string } };
 
 /** その人の全端末（スマホ・PC）にプッシュ通知を送る */
-export async function pushTo(userId: string, p: Payload): Promise<number> {
+export async function pushTo(userId: string, p: Payload, errors?: string[]): Promise<number> {
   if (!pushEnabled()) return 0;
   const subs = await q<{ endpoint: string; p256dh: string; auth: string }>(
     'SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = $1', [userId]);
@@ -21,14 +63,14 @@ export async function pushTo(userId: string, p: Payload): Promise<number> {
         {
           TTL: 600,
           vapidDetails: {
-            subject: process.env.VAPID_SUBJECT || 'mailto:admin@example.com',
-            publicKey: process.env.VAPID_PUBLIC_KEY!,
-            privateKey: process.env.VAPID_PRIVATE_KEY!,
+            ...vapid(),
           },
         },
       );
       sent++;
     } catch (e: any) {
+      console.error('push failed', e?.statusCode, e?.body || e?.message);
+      errors?.push(`${e?.statusCode || ''} ${String(e?.body || e?.message || e).slice(0, 160)}`.trim());
       // 端末側で通知をやめた・アプリを消した場合は登録を消す
       if (e?.statusCode === 404 || e?.statusCode === 410) {
         await q('DELETE FROM push_subscriptions WHERE endpoint = $1', [s.endpoint]);
