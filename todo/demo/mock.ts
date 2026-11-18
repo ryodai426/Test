@@ -25,7 +25,7 @@ const groups: Any[] = [
 function task(p: Any): Any {
   return {
     id: id(), user_id: 'me', group_id: 'gp', status: 'ready', title: '', description: '', kind: 'general', color: null,
-    date: null, time: null, duration_min: 60, reminders: KIND_PRESETS[p.kind || 'general'].reminders, remind_all: false, repeat: null,
+    kind_id: null, date: null, time: null, duration_min: 60, reminders: KIND_PRESETS[p.kind || 'general'].reminders, remind_all: false, repeat: null,
     captured_at: ago(60 * 24), detailed_at: ago(60 * 24), done_at: null, done_by: null, updated_at: ago(60), ...p,
   };
 }
@@ -43,6 +43,7 @@ const tasks: Any[] = [
   task({ title: '歯医者', kind: 'reminder', date: addDays(T, 1), time: '18:30' }),
   task({ title: 'ランニング', date: addDays(T, 2), time: '06:30', duration_min: 45, color: '#EBC1FF' }),
   task({ group_id: 'gw', user_id: 'u2', title: '見積書を送る', date: addDays(T, 1), time: '11:00', duration_min: 30 }),
+  task({ group_id: 'gw', title: 'A社訪問', kind_id: 'k1', date: T, time: '11:30', duration_min: 60 }),
   task({ group_id: 'gf', title: '週末キャンプ（道志）', date: sat, color: '#8ED462', description: '10時に出発' }),
   task({ title: 'ランタンの電池を買う' }),
   task({ title: 'キャンプ場の予約を確認' }),
@@ -58,6 +59,10 @@ const items: Any[] = [
   ...['炭', '着火剤', '氷', 'ソーセージ', 'マシュマロ'].map((label, i) => ({ id: id(), task_id: shop2.id, label, checked: false, position: i })),
 ];
 const reactions: Any[] = [];
+const kinds: Any[] = [
+  { id: 'k1', group_id: 'gw', name: '営業訪問' },
+  { id: 'k2', group_id: 'gf', name: '通院' },
+];
 
 const checklists: Any[] = [
   { id: 'c1', name: '家を出る時', trigger: 'time', show_at: '07:00', weekdays: [1, 2, 3, 4, 5], position: 0, items: ['財布', 'スマホ', '鍵', '社員証', '傘（天気を確認）', 'ゴミ'] },
@@ -100,7 +105,7 @@ function pick(b: Any, keys: string[]) {
   for (const k of keys) if (k in b) o[k] = b[k];
   return o;
 }
-const TASK_KEYS = ['title', 'description', 'kind', 'color', 'date', 'time', 'duration_min', 'reminders', 'remind_all', 'repeat', 'group_id'];
+const TASK_KEYS = ['title', 'description', 'kind', 'kind_id', 'color', 'date', 'time', 'duration_min', 'reminders', 'remind_all', 'repeat', 'group_id'];
 
 function state(day: string | null) {
   if (!loggedIn) return { me: null };
@@ -116,6 +121,7 @@ function state(day: string | null) {
     done: done.filter(x => ids.has(x.task_id)).map(x => ({ ...x })),
     items: items.filter(i => ids.has(i.task_id)).sort((a, b) => a.position - b.position).map(i => ({ ...i })),
     reactions: reactions.filter(r => ids.has(r.task_id)),
+    kinds: kinds.filter(k => gids.has(k.group_id)),
     checklists: checklists.map(c => ({ ...c, items: c.items.map((i: Any) => ({ ...i, checked: checks.has(i.id + '|' + d) })) })),
     notifications: notifications.filter(n => n.user_id === 'me').sort((a, b) => b.id - a.id).map(n => ({ ...n, actor: n.actor_id ? users[n.actor_id] : null })),
     pushKey: null,
@@ -189,6 +195,19 @@ async function handle(path: string, method: string, b: Any): Promise<any> {
   }
   if (seg[0] === 'groups' && seg.length === 2 && M === 'PATCH') { Object.assign(groups.find(g => g.id === seg[1]) || fail('見つかりません', 404), pick(b, ['name', 'description', 'color', 'notify_create', 'notify_done'])); return { ok: true }; }
   if (seg[0] === 'groups' && seg[2] === 'leave') { const g = groups.find(x => x.id === seg[1]) || fail('見つかりません', 404); g.m = g.m.filter((u: string) => u !== 'me'); return { ok: true }; }
+  if (seg[0] === 'groups' && seg[2] === 'kinds' && M === 'POST') {
+    const name = String(b.name || '').trim();
+    if (!name) fail('種類の名前を入力してください');
+    if (kinds.some(k => k.group_id === seg[1] && k.name.toLowerCase() === name.toLowerCase())) fail(`「${name}」はもうこのグループにあります`);
+    const k = { id: id(), group_id: seg[1], name };
+    kinds.push(k);
+    return { id: k.id };
+  }
+  if (seg[0] === 'kinds' && M === 'DELETE') {
+    const i = kinds.findIndex(k => k.id === seg[1]);
+    if (i >= 0) { tasks.forEach(t => { if (t.kind_id === seg[1]) t.kind_id = null; }); kinds.splice(i, 1); }
+    return { ok: true };
+  }
   if (seg[0] === 'invite') fail('デモでは招待リンクは使えません', 404);
 
   if (p === 'checklists' && M === 'POST') {

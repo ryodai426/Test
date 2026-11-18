@@ -8,9 +8,10 @@ import { api, hhmm, localToday, PALETTE, type State, type Task } from '../lib';
 export type EditorInit = { task?: Task; day?: string; time?: string; groupId?: string; kind?: string; occDay?: string; title?: string };
 
 const REMINDER_ORDER = ['eve', '60', '30', '10', '5', '0'];
+const WEEKDAYS = [1, 2, 3, 4, 5];
 
-export default function TaskEditor({ state, init, onClose, onSaved }: {
-  state: State; init: EditorInit; onClose: () => void; onSaved: (msg?: string) => void;
+export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }: {
+  state: State; init: EditorInit; onClose: () => void; onSaved: (msg?: string) => void; onRefresh: () => Promise<void>;
 }) {
   const t = init.task;
   const isDraft = t?.status === 'draft';
@@ -19,6 +20,9 @@ export default function TaskEditor({ state, init, onClose, onSaved }: {
   const [title, setTitle] = useState(t?.title || init.title || '');
   const [description, setDescription] = useState(t?.description || '');
   const [kind, setKind] = useState(t?.kind || init.kind || 'general');
+  const [kindId, setKindId] = useState<string | null>(t?.kind_id || null);
+  const [addingKind, setAddingKind] = useState(false);
+  const [kindName, setKindName] = useState('');
   const [date, setDate] = useState<string>(t ? t.date || (isDraft ? localToday() : '') : init.day || localToday());
   const [time, setTime] = useState<string>(t?.time || init.time || '');
   const [duration, setDuration] = useState(t?.duration_min || 60);
@@ -37,7 +41,36 @@ export default function TaskEditor({ state, init, onClose, onSaved }: {
   const occDay = init.occDay || t?.date || localToday();
   const done = t ? (t.repeat ? state.done.some(d => d.task_id === t.id && d.occ_date === occDay) : !!t.done_at) : false;
 
+  const groupKinds = (state.kinds || []).filter(k => k.group_id === groupId);
+
+  function pickGroup(id: string) {
+    setGroupId(id);
+    // 自分たちで足した種類はグループごとなので、別のグループに移したら外す
+    if (kindId && !(state.kinds || []).some(k => k.id === kindId && k.group_id === id)) { setKindId(null); setKind('general'); }
+  }
+
+  function pickCustomKind(id: string) {
+    setKindId(id);
+    setKind('general');
+    setReminders(KIND_PRESETS.general.reminders);
+  }
+
+  async function addKind() {
+    const name = kindName.trim();
+    if (!name) return;
+    try {
+      const r = await api<{ id: string }>(`groups/${groupId}/kinds`, 'POST', { name });
+      setKindName('');
+      setAddingKind(false);
+      await onRefresh();
+      pickCustomKind(r.id);
+    } catch (e: any) {
+      setErr(e.message);
+    }
+  }
+
   function pickKind(k: string) {
+    setKindId(null);
     setKind(k);
     setReminders(KIND_PRESETS[k].reminders); // 種類を選ぶと通知も自動で決まる
     if (k === 'shopping') { setTime(''); }
@@ -52,7 +85,7 @@ export default function TaskEditor({ state, init, onClose, onSaved }: {
     if (!title.trim()) { setErr('タイトルを入力してください'); return; }
     setBusy(true);
     const body = {
-      group_id: groupId, title, description, kind, color, date: date || null, time: date && time ? time : null,
+      group_id: groupId, title, description, kind, kind_id: kindId, color, date: date || null, time: date && time ? time : null,
       duration_min: duration, reminders: time ? reminders : [], remind_all: remindAll,
       repeat: date ? repeat : null,
     };
@@ -91,8 +124,22 @@ export default function TaskEditor({ state, init, onClose, onSaved }: {
     } else setNewItems(xs => [...xs, ...labels]);
   }
 
-  const showRepeatWeekdays = repeat?.freq === 'weekly';
   const baseWeekday = date ? weekday(date) : 1;
+  const weeklyDays = repeat?.freq === 'weekly' ? (repeat.weekdays?.length ? repeat.weekdays : [baseWeekday]) : [];
+  const isWeekdays = repeat?.freq === 'weekly' && (repeat.interval || 1) === 1
+    && weeklyDays.length === 5 && WEEKDAYS.every(w => weeklyDays.includes(w));
+
+  function setWeekly(days: number[]) {
+    if (!days.length) { setRepeat(null); return; }
+    setRepeat({
+      freq: 'weekly', interval: repeat?.freq === 'weekly' ? repeat.interval || 1 : 1,
+      weekdays: [...days].sort((a, b) => a - b), monthMode: 'day', until: repeat?.until || null,
+    });
+  }
+
+  function toggleWeekday(w: number) {
+    setWeekly(weeklyDays.includes(w) ? weeklyDays.filter(x => x !== w) : [...weeklyDays, w]);
+  }
 
   return (
     <div className="overlay" onClick={onClose}>
@@ -114,7 +161,7 @@ export default function TaskEditor({ state, init, onClose, onSaved }: {
           <div className="label">グループ</div>
           <div className="row wrap">
             {state.groups.map(g => (
-              <button key={g.id} className={'chip' + (g.id === groupId ? ' on' : '')} onClick={() => setGroupId(g.id)}>
+              <button key={g.id} className={'chip' + (g.id === groupId ? ' on' : '')} onClick={() => pickGroup(g.id)}>
                 <span className="dot" style={{ background: g.color, marginRight: 6 }} />{g.name}
               </button>
             ))}
@@ -124,9 +171,22 @@ export default function TaskEditor({ state, init, onClose, onSaved }: {
           <div className="label">種類</div>
           <div className="row wrap">
             {Object.entries(KIND_PRESETS).map(([k, v]) => (
-              <button key={k} className={'chip' + (k === kind ? ' on' : '')} onClick={() => pickKind(k)}><Emoji char={v.icon} size={18} />&nbsp;{v.label}</button>
+              <button key={k} className={'chip' + (!kindId && k === kind ? ' on' : '')} onClick={() => pickKind(k)}><Emoji char={v.icon} size={18} />&nbsp;{v.label}</button>
             ))}
+            {groupKinds.map(k => (
+              <button key={k.id} className={'chip' + (kindId === k.id ? ' on' : '')} onClick={() => pickCustomKind(k.id)}>{k.name}</button>
+            ))}
+            {!addingKind && <button className="chip dashed" onClick={() => setAddingKind(true)}>＋ 種類を追加</button>}
           </div>
+          {addingKind && (
+            <div className="row" style={{ marginTop: 8 }}>
+              <input type="text" value={kindName} onChange={e => setKindName(e.target.value)} maxLength={20} autoFocus
+                placeholder={group && !group.is_personal ? `「${group.name}」のみんなで使う種類` : '例：通院、勉強'}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); addKind(); } }} />
+              <button className="btn small primary" onClick={addKind} disabled={!kindName.trim()}>追加</button>
+              <button className="btn small" onClick={() => { setAddingKind(false); setKindName(''); }}>やめる</button>
+            </div>
+          )}
 
           {kind === 'shopping' && (
             <>
@@ -185,26 +245,21 @@ export default function TaskEditor({ state, init, onClose, onSaved }: {
             <>
               <div className="label">繰り返し</div>
               <div className="row wrap">
-                {([['', 'なし'], ['daily', '毎日'], ['weekly', '毎週'], ['monthly', '毎月']] as const).map(([f, l]) => (
-                  <button key={f} className={'chip' + ((repeat?.freq || '') === f ? ' on' : '')}
-                    onClick={() => setRepeat(f ? { freq: f, interval: 1, weekdays: f === 'weekly' ? [baseWeekday] : [], monthMode: 'day', until: repeat?.until || null } : null)}>
-                    {l}
+                <button className={'chip' + (!repeat ? ' on' : '')} onClick={() => setRepeat(null)}>なし</button>
+                <button className={'chip' + (repeat?.freq === 'daily' ? ' on' : '')} onClick={() => setRepeat({ freq: 'daily', interval: 1, weekdays: [], monthMode: 'day', until: repeat?.until || null })}>毎日</button>
+                <button className={'chip' + (isWeekdays ? ' on' : '')} onClick={() => setWeekly(WEEKDAYS)}>平日（月〜金）</button>
+                <button className={'chip' + (repeat?.freq === 'weekly' && !isWeekdays ? ' on' : '')} onClick={() => setWeekly([baseWeekday])}>毎週</button>
+                <button className={'chip' + (repeat?.freq === 'monthly' ? ' on' : '')} onClick={() => setRepeat({ freq: 'monthly', interval: 1, weekdays: [], monthMode: 'day', until: repeat?.until || null })}>毎月</button>
+              </div>
+              {/* 曜日ボタン：押した曜日に毎週くり返す（月〜金を押せば平日の予定になる） */}
+              <div className="weekday-row">
+                {[0, 1, 2, 3, 4, 5, 6].map(w => (
+                  <button key={w} className={'chip' + (weeklyDays.includes(w) ? ' on' : '') + (w === 0 ? ' sun' : w === 6 ? ' sat' : '')}
+                    onClick={() => toggleWeekday(w)} aria-pressed={weeklyDays.includes(w)}>
+                    {WEEK_LABELS[w]}
                   </button>
                 ))}
               </div>
-              {showRepeatWeekdays && (
-                <div className="row wrap" style={{ marginTop: 8 }}>
-                  {[1, 2, 3, 4, 5, 6, 0].map(w => {
-                    const on = repeat!.weekdays?.includes(w);
-                    return (
-                      <button key={w} className={'chip' + (on ? ' on' : '')} style={{ width: 40, padding: '7px 0' }}
-                        onClick={() => setRepeat({ ...repeat!, weekdays: on ? repeat!.weekdays!.filter(x => x !== w) : [...(repeat!.weekdays || []), w] })}>
-                        {WEEK_LABELS[w]}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
               {repeat?.freq === 'monthly' && date && (
                 <div className="row wrap" style={{ marginTop: 8 }}>
                   <button className={'chip' + (repeat.monthMode !== 'nth' ? ' on' : '')} onClick={() => setRepeat({ ...repeat, monthMode: 'day' })}>毎月{Number(date.slice(8))}日</button>

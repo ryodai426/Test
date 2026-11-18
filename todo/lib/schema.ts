@@ -72,6 +72,18 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 CREATE INDEX IF NOT EXISTS tasks_group_idx ON tasks(group_id);
 
+-- グループごとに自分たちで足せるタスクの種類（グループのメンバーで共有）
+CREATE TABLE IF NOT EXISTS task_kinds (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  group_id   uuid NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+  name       text NOT NULL,
+  created_by uuid REFERENCES users(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS task_kinds_name_idx ON task_kinds(group_id, lower(name));
+-- 自分で足した種類を選んだタスク（kind は 'general' のまま、通知のタイミングも一般と同じ）
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS kind_id uuid REFERENCES task_kinds(id) ON DELETE SET NULL;
+
 -- 繰り返しタスクの「その日の分」の完了
 CREATE TABLE IF NOT EXISTS task_done (
   task_id   uuid NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,

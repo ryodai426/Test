@@ -327,3 +327,15 @@ b, strong { font-weight: var(--w-head); }
 .brief-note.done .brief-title { text-decoration: line-through; }
 .brief .scene { max-height: 20vh; margin: -10px 0 0; width: 100%; }
 @keyframes note-in { from { opacity: 0; transform: translateY(18px) rotate(calc(var(--tilt, 0deg) * 3)) scale(.94); } }
+
+/* 自分たちで足した種類 */
+.chip.dashed { border-style: dashed; color: var(--sub); background: transparent; }
+.chip.dashed:hover { color: var(--ink); }
+.kind-x { width: 22px; height: 22px; margin: -4px -6px -4px 6px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: var(--sub); }
+.kind-x:hover { background: var(--cream); color: var(--danger); }
+
+/* 繰り返しの曜日ボタン（日〜土） */
+.weekday-row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; margin-top: 10px; }
+.weekday-row .chip { justify-content: center; padding: 9px 0; }
+.weekday-row .chip.sun:not(.on) { color: var(--coral); }
+.weekday-row .chip.sat:not(.on) { color: var(--sky); }
