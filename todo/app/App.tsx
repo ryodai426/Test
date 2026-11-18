@@ -7,7 +7,7 @@ import Icon, { Logo, Scene } from './components/Icon';
 import Emoji, { EmojiText } from './components/Emoji';
 import TodayBrief from './components/TodayBrief';
 import { act, bindStore, changedSince, draftTask, isTmp, P } from './store';
-import MemberStrip, { MemberFocus } from './components/Members';
+import MemberDots, { MemberFocus } from './components/Members';
 import { Review, ReviewPrompt } from './components/Review';
 import MemoBoard from './components/MemoBoard';
 import { DayView, MonthView, WeekView, periodLabel } from './components/Calendar';
@@ -479,7 +479,7 @@ export default function App() {
   const groupTitle = (
     <>
       {currentGroup ? <span className="dot" style={{ background: currentGroup.color }} /> : null}
-      {currentGroup ? currentGroup.name : 'すべて表示'}
+      <span className="title-name">{currentGroup ? currentGroup.name : 'すべて表示'}</span>
       {whoName && <span className="title-who">・{whoName}さんの予定</span>}
     </>
   );
@@ -533,18 +533,19 @@ export default function App() {
         <div className="topbar" data-keynav="h">
           <span className="only-mobile" style={{ display: 'inline-flex', flex: 'none' }}><Logo size={30} /></span>
           <button className="title title-btn" onClick={() => setPanel('groups')} aria-label={`グループを切り替える：${currentGroup ? currentGroup.name : 'すべて表示'}`}>
-            {groupTitle}<span className="title-chev"><Icon name="down" size={18} stroke={2.4} /></span>
+            <span className="title-text">{groupTitle}</span><span className="title-chev"><Icon name="down" size={18} stroke={2.4} /></span>
           </button>
+          {/* 共有グループでは、グループ名の横にメンバーのアイコンと状態の点（押すとその人の仕事の詳細） */}
+          {sharedGroup && <MemberDots state={state} group={sharedGroup} who={who} today={today}
+            onPick={id => setViewMember(id === me.id || id === viewMember ? null : id)} />}
+          <span className="grow" />
           <button className="icon-btn" onClick={() => (currentGroup ? setPanel('members') : setPanel('groups'))} aria-label="メンバー"><Icon name="users" /></button>
           <button className="icon-btn green only-mobile" onClick={() => setPanel('settings')} aria-label="設定"><Icon name="gear" stroke={2.2} /></button>
         </div>
-        {sharedGroup && (
-          <MemberStrip state={state} group={sharedGroup} who={who} today={today}
-            onPick={id => setViewMember(id === me.id || id === viewMember ? null : id)} />
-        )}
         {sharedGroup && whoName && (
           <MemberFocus state={state} group={sharedGroup} who={who} today={today}
-            onOpenTask={(taskId, day) => { const t = state.tasks.find(x => x.id === taskId); if (t) setEditor({ task: t, occDay: day }); }} />
+            onOpenTask={(taskId, day) => { const t = state.tasks.find(x => x.id === taskId); if (t) setEditor({ task: t, occDay: day }); }}
+            onClose={() => setViewMember(null)} />
         )}
         <div className="toolbar" data-keynav="h">
           <div className="seg">
