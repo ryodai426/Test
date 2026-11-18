@@ -32,13 +32,11 @@ export default function Login({ onDone, initialCode }: { onDone: () => void; ini
     <div className="login">
       <div className="login-hero">
         <h1>忘れる前に、<br />気づける。</h1>
-        <p>思いついたらひとことメモ。時間になったら知らせる。家族やチームとも共有できるタスク帳です。</p>
       </div>
       <form className="login-card" onSubmit={submit}>
         <div className="login-mark"><Logo size={34} />わすれないYO</div>
         {mode === 'new' ? (
           <>
-            <p className="muted">はじめに、あなたの名前を決めてください。</p>
             <input type="text" placeholder="ユーザー名を入力してください" value={name} onChange={e => setName(e.target.value)} autoFocus maxLength={30} />
             <div style={{ height: 12 }} />
             <button className="btn primary block big" disabled={!name.trim() || busy}>はじめる<span className="orb"><Icon name="right" size={18} stroke={2.4} /></span></button>
@@ -50,9 +48,7 @@ export default function Login({ onDone, initialCode }: { onDone: () => void; ini
           </>
         ) : (
           <>
-            <p className="muted">
-              すでに使っている端末で <b>設定 →「この端末以外でも使う」</b> を開くと、6桁のコードが出ます。それを入力してください。
-            </p>
+            <p className="muted">ほかの端末の「設定 → ほかの端末で使う」に出る6桁</p>
             <input type="text" inputMode="numeric" autoComplete="one-time-code" className="code-input" placeholder="000000"
               value={code} onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} autoFocus />
             <div style={{ height: 12 }} />

@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { KIND_PRESETS, REMINDER_LABELS, WEEK_LABELS, weekday, type Repeat } from '@/lib/time';
 import Icon from './Icon';
 import Emoji from './Emoji';
+import { act, draftTask, P } from '../store';
 import { api, hhmm, localToday, PALETTE, type State, type Task } from '../lib';
 
 export type EditorInit = { task?: Task; day?: string; time?: string; groupId?: string; kind?: string; occDay?: string; title?: string; assignees?: string[]; detail?: boolean; duration?: number };
@@ -32,6 +33,8 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
   // メモは「ひとこと」と「詳細」だけ。「詳細に記録する」にチェックしたときだけ、ふつうの入力欄を出す
   const [detailMode, setDetailMode] = useState(!!init.detail);
   const memoMode = isDraft && !detailMode;
+  // 一度入れた予定を開いたときは、タイトルと詳細だけ。ほかの設定は「設定」で開く
+  const [showSettings, setShowSettings] = useState(!t || isDraft);
   const meId = state.me!.id;
   // 表示する人：null ＝ 共通（全員）。新しく入れる予定は「自分だけ」から
   const [assignees, setAssignees] = useState<string[] | null>(t ? (t.assignees ?? null) : (init.assignees ?? [meId]));
@@ -98,10 +101,8 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
     setBusy(true);
     if (memoMode) {
       // メモのまま保存（ひとこと・詳細だけ）
-      try {
-        await api(`tasks/${t!.id}`, 'PATCH', { title, description });
-        onSaved('メモを保存しました');
-      } catch (e: any) { setErr(e.message); setBusy(false); }
+      onSaved('メモを保存しました');
+      act(P.updateTask(t!.id, { title, description }), () => api(`tasks/${t!.id}`, 'PATCH', { title, description }));
       return;
     }
     const body = {
@@ -111,23 +112,25 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
       ...(group && !group.is_personal ? { assignees: assignees === null ? 'all' : assignees } : {}),
       repeat: date ? repeat : null,
     };
-    try {
-      if (t) {
-        await api(`tasks/${t.id}`, 'PATCH', { ...body, ...(isDraft ? { status: 'ready' } : {}) });
-      } else {
-        await api('tasks', 'POST', { ...body, items: newItems });
-      }
-      onSaved(isDraft ? 'メモを予定にしました' : t ? '保存しました' : '追加しました');
-    } catch (e: any) {
-      setErr(e.message);
-      setBusy(false);
+    // 画面を先に書き換えて閉じる。送信は裏で
+    const shared = !!group && !group.is_personal;
+    const fields = {
+      group_id: groupId, title, description, kind: kindId ? 'general' : kind, kind_id: kindId, color,
+      date: body.date, time: body.time, duration_min: duration, reminders: body.reminders, remind_all: body.remind_all,
+      repeat: body.repeat, starred, assignees: shared ? assignees : null,
+    };
+    onSaved(isDraft ? 'メモを予定にしました' : t ? '保存しました' : '追加しました');
+    if (t) {
+      act(P.updateTask(t.id, { ...fields, ...(isDraft ? { status: 'ready' as const } : {}) }), () => api(`tasks/${t.id}`, 'PATCH', { ...body, ...(isDraft ? { status: 'ready' } : {}) }));
+    } else {
+      act(P.addTask(draftTask(state, fields), kind === 'shopping' ? newItems : []), () => api('tasks', 'POST', { ...body, items: newItems }));
     }
   }
 
   async function remove() {
-    if (!t || !confirm(isDraft ? 'このメモを削除しますか？' : `「${t.title || 'タスク'}」を削除しますか？${t.repeat ? '\n（繰り返しの予定はすべて消えます）' : ''}`)) return;
-    await api(`tasks/${t.id}`, 'DELETE');
+    if (!t || !confirm(isDraft ? 'このメモを削除しますか？' : `「${t.title || 'タスク'}」を削除しますか？${t.repeat ? '\n繰り返しの予定はすべて消えます' : ''}`)) return;
     onSaved('削除しました');
+    act(P.removeTask(t.id), () => api(`tasks/${t.id}`, 'DELETE'));
   }
 
 
@@ -135,10 +138,8 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
     const labels = itemText.split(/[、,\n]/).map(s => s.trim()).filter(Boolean);
     if (!labels.length) return;
     setItemText('');
-    if (t) {
-      await api(`tasks/${t.id}/items`, 'POST', { labels });
-      onSaved();
-    } else setNewItems(xs => [...xs, ...labels]);
+    if (t) act(P.addItems(t.id, labels), () => api(`tasks/${t.id}/items`, 'POST', { labels }));
+    else setNewItems(xs => [...xs, ...labels]);
   }
 
   const baseWeekday = date ? weekday(date) : 1;
@@ -165,7 +166,7 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
           <h3>{memoMode ? 'メモ' : isDraft ? 'メモを予定にする' : t ? '予定・タスク' : '新しい予定・タスク'}</h3>
           {!memoMode && (
             <button className={'star-btn' + (starred ? ' on' : '')} onClick={() => setStarred(v => !v)} aria-pressed={starred}
-              aria-label={starred ? '星を外す' : '星を付ける（重要）'} title={starred ? '星を外す' : '星を付ける（重要）'}>
+              aria-label={starred ? '星を外す' : '星を付ける'} title={starred ? '星を外す' : '星を付ける'}>
               {starred ? '★' : '☆'}
             </button>
           )}
@@ -182,20 +183,35 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
               <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="思い出せるように、少しだけ書いておく" rows={4} />
               <label className="detail-toggle">
                 <input type="checkbox" checked={detailMode} onChange={e => setDetailMode(e.target.checked)} />
-                <span>詳細に記録する<small>日時・グループ・通知などを入れて、カレンダーの予定にします</small></span>
+                <span>詳細に記録する</span>
               </label>
             </>
           ) : (<>
           {isDraft && (
             <label className="detail-toggle">
               <input type="checkbox" checked={detailMode} onChange={e => setDetailMode(e.target.checked)} />
-              <span>詳細に記録する<small>外すと、メモ（ひとこと・詳細だけ）に戻ります</small></span>
+              <span>詳細に記録する</span>
             </label>
           )}
 
           <div className="label">タイトル</div>
           <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="例：会議、小麦粉を買う" autoFocus={!t} maxLength={120} />
 
+          {!showSettings && (
+            <>
+              <div className="label">詳細</div>
+              <textarea value={description} onChange={e => setDescription(e.target.value)} rows={4} />
+              <button className="settings-toggle" onClick={() => setShowSettings(true)} aria-expanded={false}>
+                <span className="settings-summary">
+                  {[date ? `${Number(date.slice(5, 7))}/${Number(date.slice(8))}` : '日付なし', time || (date ? '終日' : ''), group?.is_personal ? '' : group?.name,
+                    kindId ? (state.kinds || []).find(k => k.id === kindId)?.name : KIND_PRESETS[kind]?.label, repeat ? '繰り返し' : ''].filter(Boolean).join('・')}
+                </span>
+                <span className="settings-open">設定 ▼</span>
+              </button>
+            </>
+          )}
+          {showSettings && (<>
+          {t && !isDraft && <button className="settings-toggle close" onClick={() => setShowSettings(false)} aria-expanded>設定 ▲</button>}
           <div className="label">グループ</div>
           <div className="row wrap">
             {state.groups.map(g => (
@@ -208,7 +224,7 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
             <>
               <div className="label">表示する人</div>
               <div className="row wrap">
-                <button className={'chip' + (assignees === null ? ' on' : '')} onClick={() => setAssignees(null)}>共通（全員）</button>
+                <button className={'chip' + (assignees === null ? ' on' : '')} onClick={() => setAssignees(null)}>共通</button>
                 {[...group.members].sort((a, b) => (a.id === meId ? -1 : b.id === meId ? 1 : 0)).map(m => {
                   const on = !!assignees?.includes(m.id);
                   return (
@@ -219,11 +235,6 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
                     }}>{m.id === meId ? '自分' : m.name}</button>
                   );
                 })}
-              </div>
-              <div className="small muted" style={{ marginTop: 6 }}>
-                {assignees === null
-                  ? `${group.name}の全員（${group.members.length}人）のカレンダーに出ます`
-                  : `${assignees.map(a => (a === meId ? '自分' : group.members.find(m => m.id === a)?.name + 'さん')).join('・')}のカレンダーに出ます。他のメンバーも、アイコンを押すと見られます`}
               </div>
             </>
           )}
@@ -256,12 +267,12 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
                   <div key={it.id} className={'li' + (it.checked ? ' on' : '')}>
                     <span className="grow">{it.label}</span>
                     <button className="del" onClick={async () => {
-                      if (t) { await api(`items/${it.id}`, 'DELETE'); onSaved(); } else setNewItems(xs => xs.filter((_, j) => j !== i));
+                      if (t) act(P.removeItem(it.id), () => api(`items/${it.id}`, 'DELETE')); else setNewItems(xs => xs.filter((_, j) => j !== i));
                     }} aria-label="削除">×</button>
                   </div>
                 ))}
                 <div className="row" style={{ marginTop: 6 }}>
-                  <input type="text" value={itemText} onChange={e => setItemText(e.target.value)} placeholder="小麦粉、卵、牛乳（読点で区切ってまとめて追加）"
+                  <input type="text" value={itemText} onChange={e => setItemText(e.target.value)} placeholder="小麦粉、卵、牛乳"
                     onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); addItem(); } }} />
                   <button className="btn small" onClick={addItem}>追加</button>
                 </div>
@@ -275,8 +286,8 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
             <input type="time" value={time} onChange={e => setTime(e.target.value)} disabled={!date} style={{ flex: 1 }} />
           </div>
           <div className="row wrap" style={{ marginTop: 8 }}>
-            {date && <button className="chip" onClick={() => { setDate(''); setTime(''); setRepeat(null); }}>日付なし（いつか）</button>}
-            {time && <button className="chip" onClick={() => setTime('')}>時刻なし（終日）</button>}
+            {date && <button className="chip" onClick={() => { setDate(''); setTime(''); setRepeat(null); }}>日付なし</button>}
+            {time && <button className="chip" onClick={() => setTime('')}>終日</button>}
             {time && (
               <select value={duration} onChange={e => setDuration(Number(e.target.value))} style={{ width: 'auto', padding: '6px 10px' }}>
                 {[...new Set([15, 30, 45, 60, 90, 120, 150, 180, 240, 300, 360, 480, duration])].sort((a, b) => a - b).map(m => (
@@ -309,7 +320,7 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
               <div className="row wrap">
                 <button className={'chip' + (!repeat ? ' on' : '')} onClick={() => setRepeat(null)}>なし</button>
                 <button className={'chip' + (repeat?.freq === 'daily' ? ' on' : '')} onClick={() => setRepeat({ freq: 'daily', interval: 1, weekdays: [], monthMode: 'day', until: repeat?.until || null })}>毎日</button>
-                <button className={'chip' + (isWeekdays ? ' on' : '')} onClick={() => setWeekly(WEEKDAYS)}>平日（月〜金）</button>
+                <button className={'chip' + (isWeekdays ? ' on' : '')} onClick={() => setWeekly(WEEKDAYS)}>平日</button>
                 <button className={'chip' + (repeat?.freq === 'weekly' && !isWeekdays ? ' on' : '')} onClick={() => setWeekly([baseWeekday])}>毎週</button>
                 <button className={'chip' + (repeat?.freq === 'monthly' ? ' on' : '')} onClick={() => setRepeat({ freq: 'monthly', interval: 1, weekdays: [], monthMode: 'day', until: repeat?.until || null })}>毎月</button>
               </div>
@@ -342,7 +353,7 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
             </>
           )}
 
-          <div className="label">詳細（任意）</div>
+          <div className="label">詳細</div>
           <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="例：営業部との定例会議" />
 
           <div className="label">色</div>
@@ -355,8 +366,8 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
               カスタム <input type="color" value={color || groupColor} onChange={e => setColor(e.target.value)} style={{ width: 34, height: 30, border: 0, background: 'none' }} />
             </label>
           </div>
-          <div className="small muted" style={{ marginTop: 6 }}>何も選ばなければグループの色になります</div>
 
+          </>)}
           </>)}
 
           {err && <div className="err">{err}</div>}

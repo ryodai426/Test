@@ -110,7 +110,7 @@ export function MemberFocus({ state, group, who, today, onOpenTask }: {
       )}
       {next && (
         <button className="mf-next" onClick={() => onOpenTask(next.task.id, today)}>
-          <span className="mf-label">次</span>{next.task.time} {next.task.title}<span className="mf-meta">（あと{span(next).s - now}分）</span>
+          <span className="mf-label">次</span>{next.task.time} {next.task.title}<span className="mf-meta">あと{span(next).s - now}分</span>
         </button>
       )}
     </div>

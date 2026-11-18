@@ -6,6 +6,7 @@ import Login from './components/Login';
 import Icon, { Logo, Scene } from './components/Icon';
 import Emoji, { EmojiText } from './components/Emoji';
 import TodayBrief from './components/TodayBrief';
+import { act, bindStore, changedSince, draftTask, isTmp, P } from './store';
 import MemberStrip, { MemberFocus } from './components/Members';
 import { Review, ReviewPrompt } from './components/Review';
 import { ShoppingPanel } from './components/Shopping';
@@ -67,9 +68,13 @@ export default function App() {
     setTimeout(() => setToast(t => (t === m ? '' : t)), 2600);
   }, []);
 
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const load = useCallback(async () => {
+    const started = Date.now();
     try {
       const s = await api<State>(`state?day=${localToday()}`);
+      // 取り直している間に画面を書き換えていたら、この結果は古いので使わない（もう一度取り直す）
+      if (changedSince(started)) { if (refreshTimer.current) clearTimeout(refreshTimer.current); refreshTimer.current = setTimeout(() => load(), 400); return; }
       if (!s.me) { setNeedLogin(true); setState(null); LS.del(CACHE_KEY); return; }
       setNeedLogin(false);
       setState(s);
@@ -80,6 +85,15 @@ export default function App() {
       if (e instanceof ApiError && e.status === 401) setNeedLogin(true);
     }
   }, []);
+
+  // 裏で最新のデータを取り直す（続けて操作しても1回にまとめる）
+  const refreshSoon = useCallback(() => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(() => load(), 500);
+  }, [load]);
+  useEffect(() => {
+    bindStore(fn => setState(s => (s ? fn(s) : s)), refreshSoon, () => notify('通信できませんでした。もう一度お試しください'));
+  }, [refreshSoon, notify]);
 
   // ---- 起動時 -------------------------------------------------------------
   useEffect(() => {
@@ -120,7 +134,7 @@ export default function App() {
     if (join) {
       api<{ name: string; n: number }>(`invite/${join}`).then(async g => {
         if (state.groups.some(x => x.invite_token === join)) { notify(`すでに「${g.name}」のメンバーです`); return; }
-        if (!confirm(`「${g.name}」（${g.n}人）に参加しますか？`)) return;
+        if (!confirm(`「${g.name}」に参加しますか？`)) return;
         const r = await api<{ id: string }>(`invite/${join}/join`, 'POST');
         await load();
         setGroupFilter(r.id);
@@ -321,6 +335,17 @@ export default function App() {
       if (brief) { setBrief(false); return; } // PC ではどのキーでも閉じる
       if (memoBoard) { if (e.key === 'Escape') setMemoBoard(false); return; }
       if (review) { if (e.key === 'Escape') setReview(false); return; }
+      if (e.key === 'Tab' && !editor && !panel && !fullList && !banner && !confirms.length) {
+        const navs = [...document.querySelectorAll<HTMLButtonElement>('.toolbar [data-nav]')];
+        if (navs.length) {
+          e.preventDefault();
+          const i = navs.indexOf(document.activeElement as HTMLButtonElement);
+          const next = i < 0 ? (e.shiftKey ? navs.length - 1 : 0) : (i + (e.shiftKey ? -1 : 1) + navs.length) % navs.length;
+          navs[next].focus();
+          return;
+        }
+      }
+      if (e.key === 'Enter' && el.matches?.('.toolbar [data-nav]')) return; // 選んでいるボタンを押す（ブラウザに任せる）
       if (editor || panel || fullList || banner) { if (e.key === 'Escape') { setEditor(null); setPanel(null); setFullList(null); setBanner(null); } return; }
       const k = e.key.toLowerCase();
       if (k === 'n') { e.preventDefault(); if (window.innerWidth >= 900) sideCaptureRef.current?.focus(); else openCapture(); }
@@ -368,18 +393,17 @@ export default function App() {
     captureRef.current?.focus();
   }
 
-  async function saveCapture(text: string, fromSide = false) {
-    await api('tasks', 'POST', { quick: true, title: text });
+  function saveCapture(text: string, fromSide = false) {
     setCapture('');
     if (!fromSide) { setCaptureOpen(false); captureRef.current?.blur(); }
-    notify(text ? `「${text}」をメモしました` : 'メモしました。あとで詳細を書きましょう');
-    load();
+    notify(text ? `「${text}」をメモしました` : 'メモしました');
+    act(P.addTask(draftTask(state!, { status: 'draft', title: text, detailed_at: null })), () => api('tasks', 'POST', { quick: true, title: text }));
   }
 
-  async function toggleDone(o: Occ) {
-    await api(`tasks/${o.task.id}/done`, 'POST', { day: o.day, done: !o.done });
+  function toggleDone(o: Occ) {
+    if (isTmp(o.task.id)) return;
     if (!o.done) notify('完了！おつかれさまです 🎉');
-    load();
+    act(P.setDone(o.task.id, o.day, !o.done, me.id), () => api(`tasks/${o.task.id}/done`, 'POST', { day: o.day, done: !o.done }));
   }
 
   function afterShopping() {
@@ -389,7 +413,7 @@ export default function App() {
 
   const calProps = {
     state, cursor, today, groupFilter, who,
-    onOpen: (o: Occ) => setEditor({ task: o.task, occDay: o.day }),
+    onOpen: (o: Occ) => { if (!isTmp(o.task.id)) setEditor({ task: o.task, occDay: o.day }); },
     // 他のメンバーの予定を見ているときに空き枠を押したら、その人あての予定として入れる
     onNew: (day: string, time?: string, duration?: number) => setEditor({ day, time, duration, groupId: groupFilter !== 'all' ? groupFilter : undefined, assignees: whoName ? [who] : undefined }),
     onToggle: toggleDone,
@@ -415,7 +439,6 @@ export default function App() {
           <label className="cap-label" htmlFor="side-capture">思いついたら、すぐメモ</label>
           <input id="side-capture" ref={sideCaptureRef} type="text" placeholder="ひとことだけでOK" value={capture} onChange={e => setCapture(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); saveCapture(capture.trim(), true); } if (e.key === 'Escape') (e.target as HTMLInputElement).blur(); }} />
-          <div className="hint"><kbd>Enter</kbd> でメモに貼る（空でもOK）・<kbd>N</kbd> でここへ</div>
         </div>
         <button className="btn primary block big" onClick={() => setEditor({ day: cursor, groupId: groupFilter !== 'all' ? groupFilter : undefined })}>予定・タスクを追加<span className="orb"><Icon name="plus" size={20} stroke={2.4} /></span></button>
         <div style={{ height: 8 }} />
@@ -434,7 +457,7 @@ export default function App() {
         <button className="side-link dim" onClick={() => setPanel('groups')}><Icon name="plus" size={19} />新しいグループ</button>
         {someday.length > 0 && (
           <>
-            <div className="side-section">いつかやる（日付なし）</div>
+            <div className="side-section">いつかやる</div>
             {someday.map(t => (
               <button key={t.id} className="side-link" onClick={() => setEditor({ task: t })}>
                 <span className="dot" style={{ background: t.color || state.groups.find(g => g.id === t.group_id)?.color }} />{t.title}
@@ -470,21 +493,23 @@ export default function App() {
         <div className="toolbar">
           <div className="seg">
             {(['day', 'week', 'month'] as View[]).map(v => (
-              <button key={v} className={view === v ? 'on' : ''} onClick={() => setView(v)}>{v.toUpperCase()}</button>
+              <button key={v} data-nav className={view === v ? 'on' : ''} onClick={() => setView(v)}
+                onDoubleClick={v === 'day' ? () => { setView('day'); setCursor(localToday()); } : undefined}
+                title={v === 'day' ? 'ダブルクリックで今日' : undefined}>{v.toUpperCase()}</button>
             ))}
           </div>
           <span className="period grow">{periodLabel(view, cursor)}
             {view === 'day' && todayList.length > 0 && <span className="small only-pc" style={{ marginLeft: 10, opacity: .7 }}>{todayList.filter(o => o.done).length}/{todayList.length} 完了</span>}
           </span>
-          <button className="icon-btn" onClick={() => move(-1)} aria-label="前へ"><Icon name="left" size={20} /></button>
-          <button className="btn small" onClick={() => setCursor(localToday())}>今日</button>
-          <button className="icon-btn" onClick={() => move(1)} aria-label="次へ"><Icon name="right" size={20} /></button>
+          <button data-nav className="icon-btn" onClick={() => move(-1)} aria-label="前へ"><Icon name="left" size={20} /></button>
+          <button data-nav className="btn small" onClick={() => setCursor(localToday())}>今日</button>
+          <button data-nav className="icon-btn" onClick={() => move(1)} aria-label="次へ"><Icon name="right" size={20} /></button>
         </div>
         </div>
         <div className="content">
           {view === 'day' && cursor === today && someday.length > 0 && (
             <details className="only-mobile" style={{ padding: '8px 12px' }}>
-              <summary className="small muted" style={{ padding: '4px' }}>いつかやる（日付なし） {someday.length}件</summary>
+              <summary className="small muted" style={{ padding: '4px' }}>いつかやる {someday.length}件</summary>
               <div className="todo-list" style={{ padding: '6px 0 0' }}>
                 {someday.map(t => (
                   <button key={t.id} className="todo" onClick={() => setEditor({ task: t })}>
@@ -528,28 +553,28 @@ export default function App() {
         <TaskEditor key={(editor.task?.id || 'new') + (editor.task?.updated_at || '')} state={state} init={editor}
           onClose={() => setEditor(null)}
           onRefresh={load}
-          onSaved={async msg => {
-            await load();
+          onSaved={msg => {
+            // 画面はもう書き換えてあるので、すぐ閉じる（最新のデータは裏で取り直す）
             if (msg) { setEditor(null); notify(msg); }
-            else setEditor(e => (e?.task ? { ...e } : e));
+            refreshSoon();
           }} />
       )}
-      {memoBoard && <MemoBoard state={state} onClose={() => setMemoBoard(false)} reload={load} notify={notify}
-        onOpen={(t: Task) => { setMemoBoard(false); setEditor({ task: t }); }} />}
-      {panel === 'shopping' && <ShoppingPanel state={state} groupFilter={groupFilter} onClose={() => setPanel(null)} reload={load} onShoppingDone={afterShopping} notify={notify} />}
-      {panel === 'checklists' && <ChecklistPanel state={state} onClose={() => setPanel(null)} reload={load} onOpenFull={c => { setPanel(null); setFullList(c); }} />}
-      {panel === 'groups' && <GroupDrawer state={state} current={groupFilter} onClose={() => setPanel(null)} reload={load} onPick={id => { setGroupFilter(id); setPanel(id !== 'all' && !state.groups.find(g => g.id === id) ? 'members' : null); }} />}
-      {panel === 'members' && currentGroup && <MembersPanel key={currentGroup.id} state={state} group={currentGroup} onClose={() => setPanel(null)} reload={load} notify={notify} onLeft={() => { setPanel(null); setGroupFilter('all'); load(); }} />}
-      {panel === 'settings' && <SettingsPanel state={state} onClose={() => setPanel(null)} notify={notify} reload={load}
+      {memoBoard && <MemoBoard state={state} onClose={() => setMemoBoard(false)} reload={refreshSoon} notify={notify}
+        onOpen={(t: Task) => { if (isTmp(t.id)) return; setMemoBoard(false); setEditor({ task: t }); }} />}
+      {panel === 'shopping' && <ShoppingPanel state={state} groupFilter={groupFilter} onClose={() => setPanel(null)} reload={refreshSoon} onShoppingDone={afterShopping} notify={notify} />}
+      {panel === 'checklists' && <ChecklistPanel state={state} onClose={() => setPanel(null)} reload={refreshSoon} onOpenFull={c => { setPanel(null); setFullList(c); }} />}
+      {panel === 'groups' && <GroupDrawer state={state} current={groupFilter} onClose={() => setPanel(null)} reload={refreshSoon} onPick={id => { setGroupFilter(id); setPanel(id !== 'all' && !state.groups.find(g => g.id === id) ? 'members' : null); }} />}
+      {panel === 'members' && currentGroup && <MembersPanel key={currentGroup.id} state={state} group={currentGroup} onClose={() => setPanel(null)} reload={refreshSoon} notify={notify} onLeft={() => { setPanel(null); setGroupFilter('all'); refreshSoon(); }} />}
+      {panel === 'settings' && <SettingsPanel state={state} onClose={() => setPanel(null)} notify={notify} reload={refreshSoon}
         onReview={() => { setPanel(null); setReview(true); }} />}
       {panel === 'notices' && <NoticePanel state={state} onClose={() => { setPanel(null); load(); }}
         reviewSeen={!reviewUnread} onReview={() => { setPanel(null); setReview(true); }} />}
       {brief && <TodayBrief state={state} today={today} onClose={() => setBrief(false)} />}
-      {review && <Review state={state} today={today} onClose={() => setReview(false)} reload={load} />}
+      {review && <Review state={state} today={today} onClose={() => setReview(false)} reload={refreshSoon} />}
       {reviewAsk && !review && !brief && (
         <ReviewPrompt
           onOpen={async skip => { setReviewAsk(false); setReview(true); if (skip) { await api('me', 'PATCH', { review_skip: true }).catch(() => {}); load(); } }}
-          onClose={async skip => { setReviewAsk(false); if (skip) { await api('me', 'PATCH', { review_skip: true }).catch(() => {}); notify('振り返りの案内をスキップします（設定で戻せます）'); load(); } }} />
+          onClose={async skip => { setReviewAsk(false); if (skip) { await api('me', 'PATCH', { review_skip: true }).catch(() => {}); notify('振り返りの案内をスキップします'); load(); } }} />
       )}
       {confirms.length > 0 && !brief && !editor && (() => {
         // 聞きたい予定が複数あっても、1つの画面にまとめて出す（次々に出ないように）
@@ -558,18 +583,17 @@ export default function App() {
         const answer = async (list: typeof items, action: 'done' | 'later' | 'hold') => {
           const keys = new Set(list.map(x => x.c.taskId + '|' + x.c.day));
           setConfirms(xs => xs.filter(x => !keys.has(x.taskId + '|' + x.day)));
-          await Promise.all(list.map(({ c, t }) => action === 'done'
-            ? api(`tasks/${t!.id}/done`, 'POST', { day: c.day, done: true }).catch(() => {})
-            : api(`tasks/${t!.id}/followup`, 'POST', { day: c.day, action }).catch(() => {})));
           notify(action === 'done' ? '完了！おつかれさまです 🎉' : action === 'later' ? '15分後にもう一度聞きます' : '保留にしました');
-          load();
+          for (const { c, t } of list) {
+            if (action === 'done') act(P.setDone(t!.id, c.day, true, me.id), () => api(`tasks/${t!.id}/done`, 'POST', { day: c.day, done: true }));
+            else act(P.setFollowup(t!.id, c.day, action === 'later' ? 'snoozed' : 'held'), () => api(`tasks/${t!.id}/followup`, 'POST', { day: c.day, action }));
+          }
         };
         return (
           <div className="banner" role="alertdialog" aria-label="完了しましたか？">
             <div className="banner-card confirm-card">
               <div className="big"><Icon name="check" size={40} stroke={2.6} /></div>
               <h2>完了しましたか？</h2>
-              <div className="muted small">終わる時間を30分過ぎた予定です</div>
               <div className="confirm-list">
                 {items.map(x => (
                   <div key={x.c.taskId + x.c.day} className="confirm-row">
@@ -582,13 +606,12 @@ export default function App() {
                   </div>
                 ))}
               </div>
-              {items.length > 1 && <button className="btn block" style={{ marginTop: 10 }} onClick={() => answer(items, 'later')}>全部まだ（15分後にもう一度）</button>}
-              <div className="small muted" style={{ marginTop: 8 }}>まだ：15分後にもう一度聞きます　保留：もう聞きません</div>
+              {items.length > 1 && <button className="btn block" style={{ marginTop: 10 }} onClick={() => answer(items, 'later')}>全部まだ</button>}
             </div>
           </div>
         );
       })()}
-      {fullList && <FullChecklist list={state.checklists.find(c => c.id === fullList.id) || fullList} onClose={() => setFullList(null)} reload={load} />}
+      {fullList && <FullChecklist list={state.checklists.find(c => c.id === fullList.id) || fullList} onClose={() => setFullList(null)} reload={refreshSoon} />}
 
       {/* ---------- 付箋 ---------- */}
       <div className="stickies">

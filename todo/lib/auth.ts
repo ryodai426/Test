@@ -33,10 +33,15 @@ export async function touchSession(lastUsedAt: string | Date): Promise<void> {
   jar.set(COOKIE, token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: MAX_AGE_DAYS * 86400 });
 }
 
+// ログインの確認を60秒だけ覚えておく（操作のたびにデータベースへ聞きに行かない）
+const userCache = new Map<string, { user: User; exp: number }>();
+
 export async function currentUser(): Promise<User | null> {
   const jar = await cookies();
   const token = jar.get(COOKIE)?.value;
   if (!token) return null;
+  const hit = userCache.get(hash(token));
+  if (hit && hit.exp > Date.now()) return hit.user;
   const row = await one<User & { last_used_at: Date }>(
     `SELECT u.id, u.name, u.tz, s.last_used_at FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = $1 AND s.last_used_at > now() - interval '${MAX_AGE_DAYS} days'`,
@@ -48,13 +53,16 @@ export async function currentUser(): Promise<User | null> {
     await q('UPDATE sessions SET last_used_at = now() WHERE token_hash = $1', [hash(token)]);
     jar.set(COOKIE, token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: MAX_AGE_DAYS * 86400 });
   }
-  return { id: row.id, name: row.name, tz: row.tz };
+  const user = { id: row.id, name: row.name, tz: row.tz };
+  if (userCache.size > 500) userCache.clear();
+  userCache.set(hash(token), { user, exp: Date.now() + 60_000 });
+  return user;
 }
 
 export async function destroySession(): Promise<void> {
   const jar = await cookies();
   const token = jar.get(COOKIE)?.value;
-  if (token) await q('DELETE FROM sessions WHERE token_hash = $1', [hash(token)]);
+  if (token) { userCache.delete(hash(token)); await q('DELETE FROM sessions WHERE token_hash = $1', [hash(token)]); }
   jar.delete(COOKIE);
 }
 

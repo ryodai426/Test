@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { api, fmtJpDate, isFor, type Item, type State, type Task } from '../lib';
 import Icon from './Icon';
 import { Board, Note } from './Board';
+import { act, draftTask, isTmp, P } from '../store';
 
 // ---------------------------------------------------------------- 売り場（スーパーを回る順）
 
@@ -118,7 +119,7 @@ export function ShoppingMode({ state, task, onClose, onToggle, onAdd }: {
         {items.length === 0 && <div className="empty" style={{ color: 'var(--ink)' }}>品目がありません。下から追加できます</div>}
       </div>
       <form className="foot shop-add" onSubmit={e => { e.preventDefault(); const l = splitLabels(text); if (l.length) { onAdd(l); setText(''); } }}>
-        <input type="text" value={text} onChange={e => setText(e.target.value)} placeholder="買い忘れを追加（読点で区切って複数）" />
+        <input type="text" value={text} onChange={e => setText(e.target.value)} placeholder="買い忘れを追加" />
         <button className="btn white">追加</button>
       </form>
     </div>
@@ -141,33 +142,37 @@ export function ShoppingPanel({ state, groupFilter, onClose, reload, onShoppingD
   const [mode, setMode] = useState<string | null>(null); // 買い物モードで開いているリスト
   const [showDone, setShowDone] = useState<Record<string, boolean>>({});
 
-  async function toggle(it: Item) {
-    const r = await api<{ completed: boolean }>(`items/${it.id}`, 'PATCH', { checked: !it.checked });
-    await reload();
-    if (r.completed) { setMode(null); notify('全部そろいました！ 買い物完了 🎉'); onShoppingDone(); }
+  const me = state.me!.id;
+  function toggle(it: Item) {
+    if (isTmp(it.id)) return;
+    const siblings = state.items.filter(i => i.task_id === it.task_id);
+    const completes = !it.checked && siblings.every(i => i.id === it.id || i.checked);
+    act(P.setItem(it.id, !it.checked, me), () => api(`items/${it.id}`, 'PATCH', { checked: !it.checked }));
+    if (completes) { setMode(null); notify('全部そろいました！ 買い物完了 🎉'); onShoppingDone(); }
   }
-  async function add(taskId: string, labels: string[]) {
-    if (!labels.length) return;
-    await api(`tasks/${taskId}/items`, 'POST', { labels });
-    reload();
+  function add(taskId: string, labels: string[]) {
+    if (!labels.length || isTmp(taskId)) return;
+    act(P.addItems(taskId, labels), () => api(`tasks/${taskId}/items`, 'POST', { labels }));
   }
-  async function create() {
+  function create() {
     if (!newName.trim()) return;
-    // 買い物リストは家族などで一緒に使うので、グループでは「共通（全員）」で作る
-    await api('tasks', 'POST', { title: newName, kind: 'shopping', group_id: newGroup, date: null, assignees: 'all' });
+    const title = newName.trim();
     setNewName('');
-    reload();
+    // 買い物リストは家族などで一緒に使うので、グループでは共通で作る
+    act(P.addTask(draftTask(state, { title, kind: 'shopping', group_id: newGroup })), () => api('tasks', 'POST', { title, kind: 'shopping', group_id: newGroup, date: null, assignees: 'all' }));
+  }
+  function removeList(t: Task) {
+    if (!confirm(`「${t.title}」を削除しますか？`)) return;
+    act(P.removeTask(t.id), () => api(`tasks/${t.id}`, 'DELETE'));
   }
   async function copyText(t: Task, items: Item[]) {
     const lines = byAisle(items.filter(i => !i.checked)).flatMap(({ aisle, items: its }) => [`【${aisle}】`, ...its.map(i => `・${i.label}`)]);
     const text = `${t.title}\n${lines.join('\n')}`;
-    try { await navigator.clipboard.writeText(text); notify('テキストでコピーしました（LINE などに貼れます）'); }
+    try { await navigator.clipboard.writeText(text); notify('コピーしました'); }
     catch { notify('コピーできませんでした'); }
   }
-  async function clearChecked(t: Task) {
-    await api(`tasks/${t.id}/items/clear-checked`, 'POST', {});
-    notify('チェック済みを片付けました');
-    reload();
+  function clearChecked(t: Task) {
+    act(P.clearChecked(t.id), () => api(`tasks/${t.id}/items/clear-checked`, 'POST', {}));
   }
 
   const modeTask = mode ? lists.find(t => t.id === mode) : null;
@@ -183,8 +188,9 @@ export function ShoppingPanel({ state, groupFilter, onClose, reload, onShoppingD
     return (
       <Note key={t.id} i={i} paper={`color-mix(in srgb, ${color} 28%, #fff)`} tape={color} className={'shop-card' + (t.done_at ? ' is-done' : '')}>
         <div className="row">
-          <h4>{t.title}</h4>
+          <h4 className="grow">{t.title}</h4>
           <span className="small muted">{t.done_at ? '完了' : `残り${unchecked.length}`}{shared ? ` ・${g!.name}` : ''}</span>
+          {!isTmp(t.id) && <button className="note-del" aria-label={`「${t.title}」を削除`} title="削除" onClick={() => removeList(t)}><Icon name="trash" size={17} /></button>}
         </div>
         {t.date && <div className="small muted">{fmtJpDate(t.date)}{t.time ? ` ${t.time}` : ''}</div>}
         {!t.done_at && items.length > 0 && (
@@ -199,7 +205,7 @@ export function ShoppingPanel({ state, groupFilter, onClose, reload, onShoppingD
           <div key={aisle} className="shop-aisle">
             <div className="shop-aisle-name">{aisle}</div>
             {its.map(it => <ItemRow key={it.id} state={state} it={it} shared={shared} onToggle={toggle}
-              onDelete={async x => { await api(`items/${x.id}`, 'DELETE'); reload(); }} />)}
+              onDelete={x => { if (!isTmp(x.id)) act(P.removeItem(x.id), () => api(`items/${x.id}`, 'DELETE')); }} />)}
           </div>
         ))}
         {checked.length > 0 && (
@@ -208,11 +214,11 @@ export function ShoppingPanel({ state, groupFilter, onClose, reload, onShoppingD
           </button>
         )}
         {showDone[t.id] && checked.map(it => <ItemRow key={it.id} state={state} it={it} shared={shared} onToggle={toggle}
-          onDelete={async x => { await api(`items/${x.id}`, 'DELETE'); reload(); }} />)}
+          onDelete={x => { if (!isTmp(x.id)) act(P.removeItem(x.id), () => api(`items/${x.id}`, 'DELETE')); }} />)}
         {!t.done_at && (
           <>
             <div className="row" style={{ marginTop: 8 }}>
-              <input type="text" placeholder="品目を追加（例：卵 2、牛乳）" value={texts[t.id] || ''}
+              <input type="text" placeholder="品目を追加" value={texts[t.id] || ''}
                 onChange={e => setTexts(x => ({ ...x, [t.id]: e.target.value }))}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { add(t.id, splitLabels(texts[t.id] || '')); setTexts(x => ({ ...x, [t.id]: '' })); } }} />
               <button className="btn small" onClick={() => { add(t.id, splitLabels(texts[t.id] || '')); setTexts(x => ({ ...x, [t.id]: '' })); }}>追加</button>
@@ -227,7 +233,7 @@ export function ShoppingPanel({ state, groupFilter, onClose, reload, onShoppingD
         )}
         {t.done_at && (
           <div className="row wrap" style={{ marginTop: 8 }}>
-            <button className="btn small" onClick={async () => { await api(`tasks/${t.id}`, 'DELETE'); reload(); }}>このリストを消す</button>
+            <button className="btn small" onClick={() => removeList(t)}>削除</button>
           </div>
         )}
       </Note>
@@ -237,7 +243,7 @@ export function ShoppingPanel({ state, groupFilter, onClose, reload, onShoppingD
   const leftTotal = open.reduce((n, t) => n + state.items.filter(i => i.task_id === t.id && !i.checked).length, 0);
   return (
     <>
-      <Board label="買い物リスト" eyebrow="貼ってある買い物リスト" title="買い物リスト" onClose={onClose}
+      <Board label="買い物リスト" eyebrow="" title="買い物リスト" onClose={onClose}
         sum={open.length ? `${open.length}枚・買うもの${leftTotal}個` : 'いまはありません'}>
         <div className="brief-board board-wide">
         {open.map(renderList)}
