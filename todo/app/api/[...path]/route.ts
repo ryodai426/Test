@@ -710,6 +710,20 @@ route('GET', 'cron', async ({ req, url }) => {
   return runDueReminders(Date.now(), url.searchParams.get('force') === '1');
 });
 
+const esc = (v: string) => v.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+
+function healthHtml(r: { ok: boolean; checks: Record<string, string> }) {
+  const rows = Object.entries(r.checks).map(([k, v]) => {
+    const bad = v.startsWith('NG');
+    const warn = !bad && !v.startsWith('OK') && !/^\d/.test(v) && !/^[a-z]{2,4}\d/.test(v);
+    return `<tr><th>${esc(k)}</th><td class="${bad ? 'ng' : warn ? 'warn' : 'ok'}">${esc(v)}</td></tr>`;
+  }).join('');
+  return `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>設定の確認</title>
+<style>body{font-family:system-ui,sans-serif;background:#F5F1E4;color:#2C2E2A;margin:0;padding:20px}h1{font-size:22px}table{width:100%;border-collapse:collapse;background:#fff;border-radius:14px;overflow:hidden}
+th,td{text-align:left;padding:12px;border-bottom:1px solid #eee;font-size:14px;vertical-align:top}th{width:38%;font-weight:600}.ng{color:#d23b2a;font-weight:600}.warn{color:#9a6a00}.ok{color:#2C2E2A}</style></head>
+<body><h1>${r.ok ? '設定は動いています' : '直すところがあります'}</h1><table>${rows}</table></body></html>`;
+}
+
 // ---------------------------------------------------------------- 入口
 
 async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
@@ -727,7 +741,12 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
       const res = await h({ req, body, params: m.slice(1).map(decodeURIComponent), url });
       // 予定・メモ・リストなどを書き換えたら、次に通知を送る時刻を計算し直させる（返事を待たせないよう、返したあとで）
       if (req.method !== 'GET' && path !== 'cron') after(() => clearNextAt());
-      return NextResponse.json(res ?? { ok: true }, { headers: { 'Cache-Control': 'no-store' } });
+      // 設定の確認ページをブラウザで開いたときは、読みやすい表にする
+      if (path === 'health' && (req.headers.get('accept') || '').includes('text/html')) {
+        return new NextResponse(healthHtml(res as { ok: boolean; checks: Record<string, string> }), { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+      }
+      // 文字の種類（UTF-8）を明記する（書かないと、ブラウザによっては日本語が文字化けする）
+      return NextResponse.json(res ?? { ok: true }, { headers: { 'Cache-Control': 'no-store', 'Content-Type': 'application/json; charset=utf-8' } });
     } catch (e: any) {
       if (e instanceof HttpError) return NextResponse.json({ error: e.message }, { status: e.status });
       if (e?.code === '22P02') return NextResponse.json({ error: '見つかりません' }, { status: 404 }); // 不正な uuid
