@@ -7,7 +7,7 @@ import Icon, { Logo, Scene } from './components/Icon';
 import Emoji, { EmojiText } from './components/Emoji';
 import TodayBrief from './components/TodayBrief';
 import { act, bindStore, changedSince, draftTask, isTmp, P } from './store';
-import MemberDots, { MemberFocus } from './components/Members';
+import MemberDots, { MemberFocus, MemberMenu } from './components/Members';
 import { Review, ReviewPrompt } from './components/Review';
 import MemoBoard from './components/MemoBoard';
 import { DayView, MonthView, WeekView, periodLabel } from './components/Calendar';
@@ -83,6 +83,8 @@ export default function App() {
   const captureRef = useRef<HTMLInputElement>(null);
   const sideCaptureRef = useRef<HTMLInputElement>(null);
   const lastDayTap = useRef(0);
+  const swipe = useRef<{ x: number; y: number; at: number } | null>(null);
+  const [slide, setSlide] = useState({ dir: 0, n: 0 }); // スライドしたときの動き
   const stateRef = useRef<State | null>(null);
   stateRef.current = state;
   // アプリ内通知（付箋・時間のリマインドの大きな表示・「完了しましたか？」）のオンオフ。端末ごと
@@ -448,6 +450,23 @@ export default function App() {
     });
   }
 
+  // スマホ：カレンダーを左右にスライドして、前・次の日／週／月へ（縦のスクロールや、長押しでの時間選びとは分ける）
+  function onSwipeStart(e: React.TouchEvent) {
+    const t = e.touches[0];
+    swipe.current = e.touches.length === 1 ? { x: t.clientX, y: t.clientY, at: Date.now() } : null;
+  }
+  function onSwipeEnd(e: React.TouchEvent) {
+    const s = swipe.current;
+    swipe.current = null;
+    if (!s) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - s.x, dy = t.clientY - s.y;
+    if (Date.now() - s.at > 700 || Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    const dir = dx < 0 ? 1 : -1; // 左へスライド → 次へ
+    move(dir);
+    setSlide(x => ({ dir, n: x.n + 1 }));
+  }
+
   function openCapture() {
     setCaptureOpen(true);
     // iPhone でキーボードを出すため、タップと同じ流れでフォーカスする
@@ -531,13 +550,18 @@ export default function App() {
       <main className="main">
         <div className="head">
         <div className="topbar" data-keynav="h">
-          <span className="only-mobile" style={{ display: 'inline-flex', flex: 'none' }}><Logo size={30} /></span>
+          {/* スマホ：共有グループでは、アプリのアイコンの代わりに見ている人のアイコン（押すとメンバーと仕事の状況） */}
+          <span className="only-mobile" style={{ display: 'inline-flex', flex: 'none' }}>
+            {sharedGroup
+              ? <MemberMenu state={state} group={sharedGroup} who={who} today={today} onPick={id => setViewMember(id === me.id ? null : id)} />
+              : <Logo size={30} />}
+          </span>
           <button className="title title-btn" onClick={() => setPanel('groups')} aria-label={`グループを切り替える：${currentGroup ? currentGroup.name : 'すべて表示'}`}>
             <span className="title-text">{groupTitle}</span><span className="title-chev"><Icon name="down" size={18} stroke={2.4} /></span>
           </button>
           {/* 共有グループでは、グループ名の横にメンバーのアイコンと状態の点（押すとその人の仕事の詳細） */}
-          {sharedGroup && <MemberDots state={state} group={sharedGroup} who={who} today={today}
-            onPick={id => setViewMember(id === me.id || id === viewMember ? null : id)} />}
+          {sharedGroup && <span className="only-pc" style={{ display: 'contents' }}><MemberDots state={state} group={sharedGroup} who={who} today={today}
+            onPick={id => setViewMember(id === me.id || id === viewMember ? null : id)} /></span>}
           <span className="grow" />
           <button className="icon-btn" onClick={() => (currentGroup ? setPanel('members') : setPanel('groups'))} aria-label="メンバー"><Icon name="users" /></button>
           <button className="icon-btn green only-mobile" onClick={() => setPanel('settings')} aria-label="設定"><Icon name="gear" stroke={2.2} /></button>
@@ -564,12 +588,12 @@ export default function App() {
           <span className="period grow">{periodLabel(view, cursor)}
             {view === 'day' && todayList.length > 0 && <span className="small only-pc" style={{ marginLeft: 10, opacity: .7 }}>{todayList.filter(o => o.done).length}/{todayList.length} 完了</span>}
           </span>
-          <button data-nav className="icon-btn" onClick={() => move(-1)} aria-label="前へ"><Icon name="left" size={20} /></button>
+          <button data-nav className="icon-btn only-pc" onClick={() => move(-1)} aria-label="前へ"><Icon name="left" size={20} /></button>
           <button data-nav className="btn small" onClick={() => setCursor(localToday())}>今日</button>
-          <button data-nav className="icon-btn" onClick={() => move(1)} aria-label="次へ"><Icon name="right" size={20} /></button>
+          <button data-nav className="icon-btn only-pc" onClick={() => move(1)} aria-label="次へ"><Icon name="right" size={20} /></button>
         </div>
         </div>
-        <div className="content">
+        <div className="content" onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd}>
           {view === 'day' && cursor === today && someday.length > 0 && (
             <details className="only-mobile" style={{ padding: '8px 12px' }}>
               <summary className="small muted" style={{ padding: '4px' }}>いつかやる {someday.length}件</summary>
@@ -583,9 +607,11 @@ export default function App() {
               </div>
             </details>
           )}
-          {view === 'day' && <DayView {...calProps} />}
-          {view === 'week' && <WeekView {...calProps} />}
-          {view === 'month' && <MonthView {...calProps} />}
+          <div key={slide.n} className={slide.n ? 'slide-in ' + (slide.dir > 0 ? 'from-right' : 'from-left') : undefined}>
+            {view === 'day' && <DayView {...calProps} />}
+            {view === 'week' && <WeekView {...calProps} />}
+            {view === 'month' && <MonthView {...calProps} />}
+          </div>
         </div>
 
         {/* ---------- スマホ：下のボタン ---------- */}

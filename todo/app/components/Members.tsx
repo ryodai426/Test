@@ -75,6 +75,46 @@ export default function MemberDots({ state, group, who, today, onPick }: {
 }
 
 /**
+ * スマホ：上のバーの左（アプリのアイコンの場所）に、見ている人（ふつうは自分）のアイコンを1つだけ。
+ * 押すと、メンバー全員のアイコンと仕事の状況をポップアップで出し、選んだ人の予定に切り替える
+ */
+export function MemberMenu({ state, group, who, today, onPick }: {
+  state: State; group: Group; who: string; today: string; onPick: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const now = useNowMin();
+  const me = state.me!.id;
+  const members = [...group.members].sort((a, b) => (a.id === me ? -1 : b.id === me ? 1 : 0));
+  const cur = members.find(m => m.id === who) || members[0];
+  const st = statusOf(state, group, cur.id, today, now);
+  return (
+    <>
+      <button className="mdot mmenu-btn" onClick={() => setOpen(true)} aria-haspopup="dialog" aria-expanded={open}
+        aria-label={`メンバーと仕事の状況：${cur.id === me ? '自分' : cur.name}`}>
+        <Avatar id={cur.id} name={cur.name} size={34} />
+        <span className={'member-dot ' + st.kind} />
+      </button>
+      {open && (
+        <div className="mmenu-back" onClick={() => setOpen(false)}>
+          <div className="mmenu" role="dialog" aria-label={`${group.name}のメンバー`} onClick={e => e.stopPropagation()}>
+            <div className="mmenu-head">{group.name}</div>
+            {members.map(m => {
+              const s = statusOf(state, group, m.id, today, now);
+              return (
+                <button key={m.id} className={'mmenu-row' + (m.id === who ? ' on' : '')} onClick={() => { setOpen(false); onPick(m.id); }}>
+                  <span className="mmenu-av"><Avatar id={m.id} name={m.name} size={38} /><span className={'member-dot ' + s.kind} /></span>
+                  <span className="grow"><b>{m.id === me ? '自分' : m.name}</b><span className={'mmenu-st ' + s.kind}>{s.text}</span></span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
  * メンバーのアイコンを押したときに出る、その人の仕事の詳細。
  * 今やっていること（時間・残り時間・説明）、次の予定、今日の進み具合。
  */
