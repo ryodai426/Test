@@ -526,6 +526,7 @@ export function SettingsPanel({ state, onClose, notify }: { state: State; onClos
       <button className="btn danger block" onClick={async () => {
         if (!confirm('この端末からログアウトしますか？（もう一度入るには、他の端末でコードを出す必要があります）')) return;
         await api('auth/logout', 'POST');
+        try { localStorage.removeItem('state-cache-v1'); } catch { /* なし */ }
         location.reload();
       }}>この端末からログアウト</button>
     </Sheet>

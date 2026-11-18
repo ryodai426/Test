@@ -165,6 +165,12 @@ CREATE TABLE IF NOT EXISTS sent_reminders (
   sent_at  timestamptz NOT NULL DEFAULT now()
 );
 
+-- アプリの情報（スキーマの版など）
+CREATE TABLE IF NOT EXISTS app_meta (
+  key   text PRIMARY KEY,
+  value text NOT NULL
+);
+
 -- 端末追加コードの総当たり対策
 CREATE TABLE IF NOT EXISTS auth_failures (
   ip  text NOT NULL,

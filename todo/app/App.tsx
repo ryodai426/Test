@@ -19,7 +19,9 @@ type Sticky = { key: string; kind: 'done' | 'created' | 'reaction' | 'draft'; bo
 const LS = {
   get: (k: string) => { try { return localStorage.getItem(k); } catch { return null; } },
   set: (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* 容量オーバーなど */ } },
+  del: (k: string) => { try { localStorage.removeItem(k); } catch { /* なし */ } },
 };
+export const CACHE_KEY = 'state-cache-v1';
 
 export default function App() {
   const [state, setState] = useState<State | null>(null);
@@ -52,10 +54,12 @@ export default function App() {
   const load = useCallback(async () => {
     try {
       const s = await api<State>(`state?day=${localToday()}`);
-      if (!s.me) { setNeedLogin(true); setState(null); return; }
+      if (!s.me) { setNeedLogin(true); setState(null); LS.del(CACHE_KEY); return; }
       setNeedLogin(false);
       setState(s);
       setToday(localToday());
+      // 次に開いたとき、通信を待たずにすぐ表示できるよう、最後のデータを残しておく
+      LS.set(CACHE_KEY, JSON.stringify(s));
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) setNeedLogin(true);
     }
@@ -63,6 +67,11 @@ export default function App() {
 
   // ---- 起動時 -------------------------------------------------------------
   useEffect(() => {
+    // 前回のデータがあれば、まずそれを表示（最新のデータは裏で取り直して差し替える）
+    try {
+      const cached = LS.get(CACHE_KEY);
+      if (cached) { const s = JSON.parse(cached) as State; if (s?.me) setState(cur => cur || s); }
+    } catch { /* 壊れていたら無視 */ }
     const v = LS.get('view') as View | null;
     setView(v || (window.innerWidth >= 900 ? 'week' : 'day'));
     setGroupFilter(LS.get('group') || 'all');

@@ -1,4 +1,3 @@
-import { sendNotification } from 'web-push';
 import { q } from './db';
 import { DRAFT_STEPS, nowIn, occursOn, addDays, reminderMessage, reminderTimes, zonedToUtc, weekday, type Repeat } from './time';
 
@@ -11,6 +10,8 @@ export async function pushTo(userId: string, p: Payload): Promise<number> {
   if (!pushEnabled()) return 0;
   const subs = await q<{ endpoint: string; p256dh: string; auth: string }>(
     'SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = $1', [userId]);
+  if (!subs.length) return 0;
+  const { sendNotification } = await import('web-push'); // 通知を送るときだけ読み込む
   let sent = 0;
   await Promise.all(subs.map(async s => {
     try {
