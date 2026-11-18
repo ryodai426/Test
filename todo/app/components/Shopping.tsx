@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { api, fmtJpDate, isFor, type Item, type State, type Task } from '../lib';
 import Icon from './Icon';
+import { Board, Note } from './Board';
 
 // ---------------------------------------------------------------- 売り場（スーパーを回る順）
 
@@ -126,20 +127,6 @@ export function ShoppingMode({ state, task, onClose, onToggle, onAdd }: {
 
 // ---------------------------------------------------------------- 買い物リスト（パネル）
 
-function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  return (
-    <div className="overlay side" onClick={onClose}>
-      <div className="sheet" onClick={e => e.stopPropagation()}>
-        <div className="sheet-head">
-          <h3><Icon name="cart" />{title}</h3>
-          <button className="icon-btn" onClick={onClose} aria-label="閉じる"><Icon name="close" size={20} /></button>
-        </div>
-        <div className="sheet-body">{children}</div>
-      </div>
-    </div>
-  );
-}
-
 export function ShoppingPanel({ state, groupFilter, onClose, reload, onShoppingDone, notify }: {
   state: State; groupFilter: string; onClose: () => void; reload: () => Promise<void> | void;
   onShoppingDone: () => void; notify: (m: string) => void;
@@ -185,15 +172,16 @@ export function ShoppingPanel({ state, groupFilter, onClose, reload, onShoppingD
 
   const modeTask = mode ? lists.find(t => t.id === mode) : null;
 
-  const renderList = (t: Task) => {
+  const renderList = (t: Task, i: number) => {
     const g = groups.get(t.group_id);
     const shared = !!g && !g.is_personal;
     const items = state.items.filter(i => i.task_id === t.id);
     const unchecked = items.filter(i => !i.checked);
     const checked = items.filter(i => i.checked);
     const suggestions = !t.done_at ? frequentItems(state, items) : [];
+    const color = t.color || g?.color || '#8ED462';
     return (
-      <div key={t.id} className="card shop-card" style={{ borderLeft: `5px solid ${t.color || g?.color}` }}>
+      <Note key={t.id} i={i} paper={`color-mix(in srgb, ${color} 28%, #fff)`} tape={color} className={'shop-card' + (t.done_at ? ' is-done' : '')}>
         <div className="row">
           <h4>{t.title}</h4>
           <span className="small muted">{t.done_at ? '完了' : `残り${unchecked.length}`}{shared ? ` ・${g!.name}` : ''}</span>
@@ -242,17 +230,19 @@ export function ShoppingPanel({ state, groupFilter, onClose, reload, onShoppingD
             <button className="btn small" onClick={async () => { await api(`tasks/${t.id}`, 'DELETE'); reload(); }}>このリストを消す</button>
           </div>
         )}
-      </div>
+      </Note>
     );
   };
 
+  const leftTotal = open.reduce((n, t) => n + state.items.filter(i => i.task_id === t.id && !i.checked).length, 0);
   return (
     <>
-      <Sheet title="買い物リスト" onClose={onClose}>
-        {open.length === 0 && <div className="empty">買い物リストはありません</div>}
+      <Board label="買い物リスト" eyebrow="貼ってある買い物リスト" title="買い物リスト" onClose={onClose}
+        sum={open.length ? `${open.length}枚・買うもの${leftTotal}個` : 'いまはありません'}>
+        <div className="brief-board board-wide">
         {open.map(renderList)}
-        <div className="card soft">
-          <div className="small" style={{ marginBottom: 8 }}>＋ 新しい買い物リスト</div>
+        <Note i={open.length} paper="rgba(255,255,255,.55)" tape="var(--yellow)" className="note-add">
+          <div className="note-add-title">＋ 新しい買い物リスト</div>
           <input type="text" placeholder="例：今日の買い物、週末の買い物" value={newName} onChange={e => setNewName(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) create(); }} />
           <div className="row wrap" style={{ marginTop: 8 }}>
@@ -263,10 +253,15 @@ export function ShoppingPanel({ state, groupFilter, onClose, reload, onShoppingD
             ))}
           </div>
           <button className="btn primary block" style={{ marginTop: 10 }} onClick={create} disabled={!newName.trim()}>作成</button>
+        </Note>
         </div>
-        {done.length > 0 && <div className="label">最近おわった買い物</div>}
-        {done.map(renderList)}
-      </Sheet>
+        {done.length > 0 && (
+          <>
+            <h3 className="review-sec">最近おわった買い物</h3>
+            <div className="brief-board board-wide">{done.map((t, i) => renderList(t, i + 2))}</div>
+          </>
+        )}
+      </Board>
       {modeTask && <ShoppingMode state={state} task={modeTask} onClose={() => setMode(null)} onToggle={toggle} onAdd={l => add(modeTask.id, l)} />}
     </>
   );

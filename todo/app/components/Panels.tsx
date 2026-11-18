@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { WEEK_LABELS } from '@/lib/time';
 import Icon, { Scene } from './Icon';
+import { Board, Note, PAPERS, TAPES } from './Board';
 import Emoji, { EmojiText } from './Emoji';
 import { sw, isFor, api, fmtJpDate, hhmm, localDateOf, localToday, PALETTE, type Checklist, type Group, type State, type Task } from '../lib';
 
@@ -91,7 +92,7 @@ function ChecklistEditor({ list, onDone }: { list?: Checklist; onDone: () => voi
   }
 
   return (
-    <div className="card">
+    <div className="note-editor">
       <div className="label" style={{ marginTop: 0 }}>名前</div>
       <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="例：家を出る時、会議の日" />
       <div className="label">いつ表示する？</div>
@@ -141,30 +142,48 @@ export function ChecklistPanel({ state, onClose, reload, onOpenFull }: { state: 
     c.trigger === 'time' ? `${c.show_at} に表示（${c.weekdays.length === 7 ? '毎日' : [1, 2, 3, 4, 5, 6, 0].filter(w => c.weekdays.includes(w)).map(w => WEEK_LABELS[w]).join('')}）`
       : c.trigger === 'after_shopping' ? '買い物が終わったら表示' : '自分で開く';
   return (
-    <Sheet title="持ち物チェックリスト" icon="pack" onClose={onClose}>
-      <div className="small muted" style={{ marginTop: 10 }}>チェックは毎日リセットされます。</div>
-      {state.checklists.map(c => editing === c.id ? (
-        <ChecklistEditor key={c.id} list={c} onDone={() => { setEditing(null); reload(); }} />
-      ) : (
-        <div key={c.id} className="card">
-          <div className="row">
-            <h4>{c.name}</h4>
-            <button className="btn small" onClick={() => onOpenFull(c)}>開く</button>
-            <button className="btn small" onClick={() => setEditing(c.id)}>編集</button>
-          </div>
-          <div className="small muted" style={{ marginBottom: 4 }}>{triggerText(c)}</div>
-          {c.items.map(i => (
-            <div key={i.id} className={'li' + (i.checked ? ' on' : '')}>
-              <button className={'box' + (i.checked ? ' on' : '')} onClick={async () => { await toggleCheck(i.id, !i.checked); reload(); }} aria-label="チェック">{i.checked && <Icon name="check" size={15} stroke={2.6} />}</button>
-              <span className="grow">{i.label}</span>
-            </div>
-          ))}
-        </div>
-      ))}
-      {editing === 'new' ? <ChecklistEditor onDone={() => { setEditing(null); reload(); }} /> : (
-        <button className="btn block" style={{ marginTop: 14 }} onClick={() => setEditing('new')}>＋ 新しいチェックリスト</button>
-      )}
-    </Sheet>
+    <Board label="持ち物チェックリスト" eyebrow="出かける前に、指差し確認" title="持ち物チェック" onClose={onClose}
+      sum={`${state.checklists.length}枚・チェックは毎日リセット`}>
+      <div className="brief-board board-wide">
+        {state.checklists.map((c, i) => {
+          const done = c.items.filter(x => x.checked).length;
+          return (
+            <Note key={c.id} i={i} paper={PAPERS[i % PAPERS.length]} tape={TAPES[i % TAPES.length]} className="check-note">
+              {editing === c.id ? (
+                <ChecklistEditor list={c} onDone={() => { setEditing(null); reload(); }} />
+              ) : (
+                <>
+                  <div className="row">
+                    <h4 className="note-title grow">{c.name}</h4>
+                    <span className="note-count">{done}/{c.items.length}</span>
+                  </div>
+                  <div className="small muted">{triggerText(c)}</div>
+                  <div className="note-items">
+                    {c.items.map(it => (
+                      <div key={it.id} className={'li' + (it.checked ? ' on' : '')} role="checkbox" aria-checked={it.checked} tabIndex={0}
+                        onClick={async () => { await toggleCheck(it.id, !it.checked); reload(); }}>
+                        <span className={'box' + (it.checked ? ' on' : '')}>{it.checked && <Icon name="check" size={15} stroke={2.6} />}</span>
+                        <span className="grow">{it.label}</span>
+                      </div>
+                    ))}
+                    {c.items.length === 0 && <div className="small muted">項目がありません。「編集」から足せます</div>}
+                  </div>
+                  <div className="row note-actions">
+                    <button className="btn primary small" onClick={() => onOpenFull(c)}><Icon name="pack" size={16} />全画面でチェック</button>
+                    <button className="btn small" onClick={() => setEditing(c.id)}>編集</button>
+                  </div>
+                </>
+              )}
+            </Note>
+          );
+        })}
+        <Note i={state.checklists.length} paper="rgba(255,255,255,.55)" tape="var(--yellow)" className="note-add check-note">
+          {editing === 'new' ? <ChecklistEditor onDone={() => { setEditing(null); reload(); }} /> : (
+            <button className="note-add-btn" onClick={() => setEditing('new')}>＋ 新しいチェックリスト<span>例：会議の日、ジムに行く日、旅行</span></button>
+          )}
+        </Note>
+      </div>
+    </Board>
   );
 }
 
