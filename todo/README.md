@@ -2,7 +2,8 @@
 
 「忘れる前に気づかせる」共同タスク管理アプリ。スマホと会社のPCの両方から、同じ予定・メモを入れられます。
 
-- 要件の見直し内容：[docs/要件定義書_ブラッシュアップ.md](docs/要件定義書_ブラッシュアップ.md)
+- **引き継ぎ用の要件定義書（最新・これを正とする）：[docs/要件定義書_引き継ぎ.md](docs/要件定義書_引き継ぎ.md)**
+- 初期の検討メモ（古い）：[docs/要件定義書_ブラッシュアップ.md](docs/要件定義書_ブラッシュアップ.md)
 - 構成：Next.js 15（App Router）＋ Postgres（Neon）＋ Web Push、Vercel にデプロイ
 
 ## デプロイ手順（Vercel + Neon）
@@ -46,19 +47,4 @@ npm run dev
 
 ## ファイル構成
 
-```
-todo/
-  app/
-    App.tsx                 画面全体（データ取得・同期・通知・付箋）
-    components/Calendar.tsx 日・週・月の表示
-    components/TaskEditor.tsx 予定・タスクの入力画面
-    components/Panels.tsx   未記入メモ・買い物・持ち物・グループ・設定
-    components/Login.tsx    はじめる／コードでログイン
-    api/[...path]/route.ts  API（すべてここ）
-  lib/
-    schema.ts               DB設計（初回に自動で実行）
-    time.ts                 繰り返し・リマインド時刻の計算（サーバーと画面で共通）
-    notify.ts               プッシュ通知と、1分ごとのリマインド送信
-    auth.ts                 端末ごとのログイン・6桁コード
-  public/sw.js              プッシュ通知を受け取る Service Worker
-```
+[docs/要件定義書_引き継ぎ.md](docs/要件定義書_引き継ぎ.md) の「4. ファイル構成」を見てください。
