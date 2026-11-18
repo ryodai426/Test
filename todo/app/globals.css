@@ -502,3 +502,33 @@ b, strong { font-weight: var(--w-head); }
 .shop-add input { border-color: transparent; }
 .shop-mode { padding-bottom: calc(16px + var(--safe-b)); }
 .shop-mode .foot { padding-bottom: 0; }
+
+/* ---- 付箋のボード（買い物リスト・持ち物チェック） ---- */
+.board { cursor: default; }
+.board-wide { grid-template-columns: minmax(0, 1fr) !important; gap: 22px 18px !important; }
+@media (min-width: 640px) { .board-wide { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
+@media (min-width: 1100px) { .board-wide { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; } }
+.board-note { padding: 24px 16px 16px; gap: 4px; cursor: default; align-self: start; }
+.board-note .li { border-bottom-color: rgba(44, 46, 42, .08); padding: 9px 2px; }
+.board-note input[type="text"], .board-note input[type="time"] { background: var(--card); border-color: transparent; }
+.board-note .btn:not(.primary):not(.danger) { background: rgba(255, 255, 255, .8); }
+.board-note .btn:not(.primary):not(.danger):hover { background: #fff; }
+.board-note .chip { border-color: transparent; }
+.board-note .chip.on { background: var(--green); }
+.board-note .shop-aisle-name { border-color: rgba(44, 46, 42, .12); }
+.board-note .qty { background: rgba(255, 255, 255, .85); }
+.board-note.is-done { opacity: .7; }
+.note-title { margin: 0; font-size: 18px; font-weight: var(--w-head); }
+.note-count { font-size: 13px; background: rgba(255, 255, 255, .75); border-radius: 999px; padding: 1px 10px; }
+.note-items { margin-top: 6px; }
+.note-actions { margin-top: 10px; flex-wrap: wrap; }
+.note-add { box-shadow: none; border: 2.5px dashed rgba(44, 46, 42, .25); }
+.note-add-title { font-size: 16px; font-weight: var(--w-head); margin-bottom: 8px; }
+.note-add-btn { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; text-align: left; font-size: 17px; font-weight: var(--w-head); padding: 18px 2px; width: 100%; }
+.note-add-btn span { font-size: 12.5px; color: var(--sub); font-weight: var(--w-base); }
+.note-editor .label { color: var(--ink); opacity: .75; }
+.shop-card h4 { font-size: 18px; }
+.fullcheck.shop-mode { z-index: 95; }
+.board-note h4 { margin: 0; }
+.board .scene { max-height: 14vh; }
+@media (max-width: 899px) { .board .scene { max-height: 9vh; } }
