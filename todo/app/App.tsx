@@ -12,6 +12,7 @@ import { Review, ReviewPrompt } from './components/Review';
 import MemoBoard from './components/MemoBoard';
 import { DayView, MonthView, WeekView, periodLabel } from './components/Calendar';
 import TaskEditor, { type EditorInit } from './components/TaskEditor';
+import { ConfirmHost } from './confirm';
 import {
   ChecklistPanel, FullChecklist, GroupDrawer, MembersPanel, NoticePanel, SettingsPanel, checklistDue,
 } from './components/Panels';
@@ -36,7 +37,14 @@ function reloadIfOutdated(serverBuild: string | undefined): boolean {
   if (!serverBuild || !mine || serverBuild === mine || isDemo()) return false;
   const key = 'reloaded-for';
   try { if (sessionStorage.getItem(key) === serverBuild) return false; sessionStorage.setItem(key, serverBuild); } catch { return false; }
-  location.reload();
+  // 保存してあるページを最新にしてから読み込み直す（Service Worker は保存したページをすぐ出すため）
+  (async () => {
+    try {
+      const res = await fetch('/', { cache: 'no-store' });
+      if (res.ok) await (await caches.open('app-v2')).put('/', res);
+    } catch { /* つながらなければ、そのまま読み込み直す */ }
+    location.reload();
+  })();
   return true;
 }
 
@@ -233,7 +241,7 @@ export default function App() {
       const doneSet = new Set(s.done.map(d => d.task_id + '|' + d.occ_date));
       const myGroups = new Set(s.groups.map(g => g.id));
       for (const t of s.tasks) {
-        if (t.status !== 'ready' || !t.time || !t.reminders.length || !myGroups.has(t.group_id)) continue;
+        if (t.status !== 'ready' || !t.time || !myGroups.has(t.group_id)) continue;
         // 自分あての予定だけ（表示する人に選ばれている／共通なら作った人か「全員に通知」）
         if (!(t.assignees?.length ? t.assignees.includes(s.me!.id) : (t.user_id === s.me!.id || t.remind_all))) continue;
         for (const day of [td, addDays(td, 1)]) {
@@ -561,7 +569,7 @@ export default function App() {
         <input ref={captureRef} type="text" placeholder="例：小麦粉、田中さんに電話" value={capture} onChange={e => setCapture(e.target.value)} enterKeyHint="done"
           onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); saveCapture(capture.trim()); } }} />
         <div className="row" style={{ marginTop: 10 }}>
-          <button className="btn" onClick={() => { const t = capture.trim(); setCaptureOpen(false); setCapture(''); setEditor({ day: cursor, title: t }); }}>いま詳しく書く</button>
+          <button className="btn" onClick={() => { const t = capture.trim(); setCaptureOpen(false); setCapture(''); setEditor({ day: cursor, title: t, groupId: groupFilter !== 'all' ? groupFilter : undefined }); }}>いま詳しく書く</button>
           <div className="grow" />
           <button className="btn primary" onClick={() => saveCapture(capture.trim())}>とりあえず保存</button>
         </div>
@@ -678,6 +686,7 @@ export default function App() {
         </div>
       )}
 
+      <ConfirmHost />
       {toast && <div className="toast"><EmojiText text={toast} /></div>}
     </div>
   );

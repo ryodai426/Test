@@ -4,6 +4,7 @@ import { WEEK_LABELS } from '@/lib/time';
 import Icon, { Scene } from './Icon';
 import { Board, Note, PAPERS, TAPES } from './Board';
 import { act, isTmp, tmpId, P } from '../store';
+import { confirmDelete, hasSkippedConfirms, resetSkippedConfirms } from '../confirm';
 import Emoji, { EmojiText } from './Emoji';
 import { sw, isFor, api, fmtJpDate, hhmm, localDateOf, localToday, PALETTE, type Checklist, type Group, type State, type Task } from '../lib';
 
@@ -126,7 +127,7 @@ function ChecklistEditor({ list, onDone }: { list?: Checklist; onDone: () => voi
       <button className="btn small" onClick={() => setItems(xs => [...xs, { label: '' }])}>＋ 項目を追加</button>
       {err && <div className="err">{err}</div>}
       <div className="row" style={{ marginTop: 14 }}>
-        {list && <button className="btn danger small" onClick={() => { if (confirm(`「${list.name}」を削除しますか？`)) { onDone(); act(P.removeChecklist(list.id), () => api(`checklists/${list.id}`, 'DELETE')); } }}>削除</button>}
+        {list && <button className="btn danger small" onClick={async () => { if (await confirmDelete(`「${list.name}」を削除しますか？`, 'checklist')) { onDone(); act(P.removeChecklist(list.id), () => api(`checklists/${list.id}`, 'DELETE')); } }}>削除</button>}
         <div className="grow" />
         <button className="btn small" onClick={onDone}>キャンセル</button>
         <button className="btn primary small" onClick={save}>保存</button>
@@ -155,8 +156,8 @@ export function ChecklistPanel({ state, onClose, reload, onOpenFull }: { state: 
                   <div className="row">
                     <h4 className="note-title grow">{c.name}</h4>
                     <span className="note-count">{done}/{c.items.length}</span>
-                    <button className="note-del" aria-label={`「${c.name}」を削除`} title="削除" onClick={() => {
-                      if (isTmp(c.id) || !confirm(`「${c.name}」を削除しますか？`)) return;
+                    <button className="note-del" aria-label={`「${c.name}」を削除`} title="削除" onClick={async () => {
+                      if (isTmp(c.id) || !(await confirmDelete(`「${c.name}」を削除しますか？`, 'checklist'))) return;
                       act(P.removeChecklist(c.id), () => api(`checklists/${c.id}`, 'DELETE'));
                     }}><Icon name="trash" size={17} /></button>
                   </div>
@@ -310,7 +311,7 @@ function KindsEditor({ state, group, reload, notify }: { state: State; group: Gr
           <span key={k.id} className="chip">
             {k.name}
             <button className="kind-x" aria-label={`「${k.name}」を削除`} onClick={async () => {
-              if (!confirm(`種類「${k.name}」を削除しますか？\nこの種類の予定は「一般」になります。`)) return;
+              if (!(await confirmDelete(`種類「${k.name}」を削除しますか？\nこの種類の予定は「一般」になります。`, 'kind'))) return;
               await api(`kinds/${k.id}`, 'DELETE');
               reload();
             }}><Icon name="close" size={14} stroke={2.4} /></button>
@@ -365,6 +366,8 @@ export function SettingsPanel({ state, onClose, notify, reload, onReview }: {
   }, [left]);
 
   const [pushErr, setPushErr] = useState('');
+  const [skippedConfirms, setSkippedConfirms] = useState(false);
+  useEffect(() => setSkippedConfirms(hasSkippedConfirms()), []);
   const [pushBusy, setPushBusy] = useState(false);
   async function enablePush() {
     setPushErr('');
@@ -478,6 +481,13 @@ export function SettingsPanel({ state, onClose, notify, reload, onReview }: {
       <div className="small muted" style={{ lineHeight: 2 }}>
         <kbd>N</kbd> メモ　<kbd>A</kbd> 予定を追加　<kbd>T</kbd> 今日　<kbd>D</kbd>/<kbd>W</kbd>/<kbd>M</kbd> 日・週・月　<kbd>←</kbd><kbd>→</kbd> 前後　<kbd>Tab</kbd> 切り替えを選ぶ → <kbd>Enter</kbd>
       </div>
+
+      {skippedConfirms && (
+        <>
+          <div className="label">削除の確認</div>
+          <button className="btn block" onClick={() => { resetSkippedConfirms(); setSkippedConfirms(false); notify('削除するときに確認します'); }}>削除の確認を表示する</button>
+        </>
+      )}
 
       <div className="hr" />
       <button className="btn danger block" onClick={async () => {

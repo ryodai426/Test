@@ -1,6 +1,7 @@
 'use client';
-import { useState } from 'react';
-import { KIND_PRESETS, REMINDER_LABELS, WEEK_LABELS, weekday, type Repeat } from '@/lib/time';
+import { useEffect, useState } from 'react';
+import { confirmDelete } from '../confirm';
+import { addDays, daysBetween, KIND_PRESETS, REMINDER_CHOICES, REMINDER_LABELS, WEEK_LABELS, weekday, type Repeat } from '@/lib/time';
 import Icon from './Icon';
 import Emoji from './Emoji';
 import { act, draftTask, P } from '../store';
@@ -8,7 +9,7 @@ import { api, hhmm, localToday, PALETTE, type State, type Task } from '../lib';
 
 export type EditorInit = { task?: Task; day?: string; time?: string; groupId?: string; kind?: string; occDay?: string; title?: string; assignees?: string[]; detail?: boolean; duration?: number };
 
-const REMINDER_ORDER = ['eve', '60', '30', '10', '5', '0'];
+type Scope = 'one' | 'following' | 'all';
 const WEEKDAYS = [1, 2, 3, 4, 5];
 
 export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }: {
@@ -24,10 +25,21 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
   const [kindId, setKindId] = useState<string | null>(t?.kind_id || null);
   const [addingKind, setAddingKind] = useState(false);
   const [kindName, setKindName] = useState('');
-  const [date, setDate] = useState<string>(t ? t.date || (isDraft ? localToday() : '') : init.day || localToday());
+  // 繰り返しの予定は、開いた日の分として見せる（「すべて」で保存するときは、ずらした日数だけ全体をずらす）
+  const isRepeat = !!t?.repeat && !!t.date && !isDraft;
+  const openedDay = init.occDay || t?.date || localToday();
+  const [date, setDate] = useState<string>(t ? (isRepeat ? openedDay : t.date || (isDraft ? localToday() : '')) : init.day || localToday());
+  // 繰り返しの予定を保存・削除するとき、どこまで変えるかを聞く
+  const [askScope, setAskScope] = useState<null | 'save' | 'delete'>(null);
   const [time, setTime] = useState<string>(t?.time || init.time || '');
   const [duration, setDuration] = useState(t?.duration_min || init.duration || 60);
-  const [reminders, setReminders] = useState<string[]>(t && !isDraft ? t.reminders : KIND_PRESETS[init.kind || 'general'].reminders);
+  // 複数日の予定（出張など）の最後の日。空ならその日だけ
+  const [endDate, setEndDate] = useState<string>(t?.end_date || '');
+  const multi = !!date && !!endDate && endDate > date;
+  // 選べる通知だけ持つ（時間ちょうどは自動。1時間前・10分前はもう選べない）
+  const [reminders, setReminders] = useState<string[]>((t && !isDraft ? t.reminders : KIND_PRESETS[init.kind || 'general'].reminders).filter(r => REMINDER_CHOICES.includes(r)));
+  // グループを選んだ状態で新しく入れるときは、グループ欄を出さない（別のグループに入れることはまずないため）
+  const hideGroup = !t && !!init.groupId;
   const [remindAll, setRemindAll] = useState(t?.remind_all || false);
   const [starred, setStarred] = useState(!!t?.starred);
   // メモは「ひとこと」と「詳細」だけ。「詳細に記録する」にチェックしたときだけ、ふつうの入力欄を出す
@@ -40,6 +52,13 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
   const [assignees, setAssignees] = useState<string[] | null>(t ? (t.assignees ?? null) : (init.assignees ?? [meId]));
   const [color, setColor] = useState<string | null>(t?.color || null);
   const [repeat, setRepeat] = useState<Repeat | null>(t?.repeat || null);
+  // 曜日ボタンは「毎週」を選んだときだけ出す
+  const [weeklyOpen, setWeeklyOpen] = useState(() => {
+    const r = t?.repeat;
+    if (r?.freq !== 'weekly') return false;
+    const ds = r.weekdays || [];
+    return !((r.interval || 1) === 1 && ds.length === 5 && [1, 2, 3, 4, 5].every(w => ds.includes(w)));
+  });
   const [newItems, setNewItems] = useState<string[]>([]);
   const [itemText, setItemText] = useState('');
   const [err, setErr] = useState('');
@@ -95,9 +114,10 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
     setReminders(rs => (rs.includes(r) ? rs.filter(x => x !== r) : [...rs, r]));
   }
 
-  async function save() {
+  async function save(scope?: Scope) {
     setErr('');
     if (!memoMode && !title.trim()) { setErr('タイトルを入力してください'); return; }
+    if (isRepeat && !scope) { setAskScope('save'); return; }
     setBusy(true);
     if (memoMode) {
       // メモのまま保存（ひとこと・詳細だけ）
@@ -107,32 +127,61 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
     }
     const body = {
       starred,
-      group_id: groupId, title, description, kind, kind_id: kindId, color, date: date || null, time: date && time ? time : null,
-      duration_min: duration, reminders: time ? reminders : [], remind_all: assignees === null && remindAll,
+      group_id: groupId, title, description, kind, kind_id: kindId, color, date: date || null, end_date: multi ? endDate : null,
+      time: date && time && !multi ? time : null,
+      duration_min: duration, reminders: time && !multi ? reminders.filter(r => REMINDER_CHOICES.includes(r)) : [], remind_all: assignees === null && remindAll,
       ...(group && !group.is_personal ? { assignees: assignees === null ? 'all' : assignees } : {}),
-      repeat: date ? repeat : null,
+      repeat: date && !multi ? repeat : null,
     };
     // 画面を先に書き換えて閉じる。送信は裏で
     const shared = !!group && !group.is_personal;
     const fields = {
       group_id: groupId, title, description, kind: kindId ? 'general' : kind, kind_id: kindId, color,
-      date: body.date, time: body.time, duration_min: duration, reminders: body.reminders, remind_all: body.remind_all,
+      date: body.date, end_date: body.end_date, time: body.time, duration_min: duration, reminders: body.reminders, remind_all: body.remind_all,
       repeat: body.repeat, starred, assignees: shared ? assignees : null,
     };
     onSaved(isDraft ? 'メモを予定にしました' : t ? '保存しました' : '追加しました');
-    if (t) {
+    if (t && isRepeat && scope && scope !== 'all') {
+      // この日だけ／この日以降すべて
+      act(P.splitTask(t.id, openedDay, scope, fields), () => api(`tasks/${t.id}/split`, 'POST', { ...body, day: openedDay, scope }));
+    } else if (t && isRepeat) {
+      // すべて：開いた日からずらした日数だけ、繰り返し全体をずらす。外した日はそのまま
+      const start = repeat && date ? addDays(t.date!, daysBetween(openedDay, date)) : date || null;
+      const rep = repeat ? { ...repeat, except: t.repeat!.except || [] } : null;
+      const all = { ...body, date: start, repeat: rep };
+      act(P.updateTask(t.id, { ...fields, date: start, repeat: rep }), () => api(`tasks/${t.id}`, 'PATCH', all));
+    } else if (t) {
       act(P.updateTask(t.id, { ...fields, ...(isDraft ? { status: 'ready' as const } : {}) }), () => api(`tasks/${t.id}`, 'PATCH', { ...body, ...(isDraft ? { status: 'ready' } : {}) }));
     } else {
       act(P.addTask(draftTask(state, fields), kind === 'shopping' ? newItems : []), () => api('tasks', 'POST', { ...body, items: newItems }));
     }
   }
 
-  async function remove() {
-    if (!t || !confirm(isDraft ? 'このメモを削除しますか？' : `「${t.title || 'タスク'}」を削除しますか？${t.repeat ? '\n繰り返しの予定はすべて消えます' : ''}`)) return;
+  async function remove(scope?: Scope) {
+    if (!t) return;
+    if (isRepeat && !scope) { setAskScope('delete'); return; }
+    if (!isRepeat && !(await confirmDelete(isDraft ? 'このメモを削除しますか？' : `「${t.title || 'タスク'}」を削除しますか？`, 'task'))) return;
     onSaved('削除しました');
-    act(P.removeTask(t.id), () => api(`tasks/${t.id}`, 'DELETE'));
+    if (isRepeat && scope && scope !== 'all') act(P.splitTask(t.id, openedDay, scope, null), () => api(`tasks/${t.id}/split`, 'POST', { day: openedDay, scope, delete: true }));
+    else act(P.removeTask(t.id), () => api(`tasks/${t.id}`, 'DELETE'));
   }
 
+
+  // キーボード：Esc で閉じる、Enter で保存（詳細の欄の中では改行。日本語の変換中は何もしない）
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (askScope) { if (e.key === 'Escape') { e.preventDefault(); setAskScope(null); } return; }
+      const el = e.target as HTMLElement;
+      if (e.key === 'Escape') { e.preventDefault(); onClose(); return; }
+      if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229 || e.shiftKey || e.defaultPrevented) return;
+      if (['TEXTAREA', 'BUTTON', 'SELECT', 'A'].includes(el.tagName)) return;
+      if (el.tagName === 'INPUT' && (el as HTMLInputElement).type === 'checkbox') return;
+      e.preventDefault();
+      save();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   async function addItem() {
     const labels = itemText.split(/[、,\n]/).map(s => s.trim()).filter(Boolean);
@@ -161,7 +210,7 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
 
   return (
     <div className="overlay" onClick={onClose}>
-      <div className="sheet" onClick={e => e.stopPropagation()}>
+      <div className={'sheet' + (showSettings && !memoMode ? ' sheet-wide' : '')} onClick={e => e.stopPropagation()}>
         <div className="sheet-head">
           <h3>{memoMode ? 'メモ' : isDraft ? 'メモを予定にする' : t ? '予定・タスク' : '新しい予定・タスク'}</h3>
           {!memoMode && (
@@ -195,7 +244,7 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
           )}
 
           <div className="label">タイトル</div>
-          <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="例：会議、小麦粉を買う" autoFocus={!t} maxLength={120} />
+          <input type="text" value={title} onChange={e => setTitle(e.target.value)} autoFocus={!t} maxLength={120} aria-label="タイトル" />
 
           {!showSettings && (
             <>
@@ -203,7 +252,7 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
               <textarea value={description} onChange={e => setDescription(e.target.value)} rows={4} />
               <button className="settings-toggle" onClick={() => setShowSettings(true)} aria-expanded={false}>
                 <span className="settings-summary">
-                  {[date ? `${Number(date.slice(5, 7))}/${Number(date.slice(8))}` : '日付なし', time || (date ? '終日' : ''), group?.is_personal ? '' : group?.name,
+                  {[date ? `${Number(date.slice(5, 7))}/${Number(date.slice(8))}${multi ? `〜${Number(endDate.slice(5, 7))}/${Number(endDate.slice(8))}` : ''}` : '日付なし', multi ? '' : time || (date ? '終日' : ''), group?.is_personal ? '' : group?.name,
                     kindId ? (state.kinds || []).find(k => k.id === kindId)?.name : KIND_PRESETS[kind]?.label, repeat ? '繰り返し' : ''].filter(Boolean).join('・')}
                 </span>
                 <span className="settings-open">設定 ▼</span>
@@ -212,14 +261,105 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
           )}
           {showSettings && (<>
           {t && !isDraft && <button className="settings-toggle close" onClick={() => setShowSettings(false)} aria-expanded>設定 ▲</button>}
-          <div className="label">グループ</div>
-          <div className="row wrap">
-            {state.groups.map(g => (
-              <button key={g.id} className={'chip' + (g.id === groupId ? ' on' : '')} onClick={() => pickGroup(g.id)}>
-                <span className="dot" style={{ background: g.color, marginRight: 6 }} />{g.name}
-              </button>
-            ))}
+          <div className="editor-grid">
+          <div className="editor-col">
+          <div className="label">日時</div>
+          <div className="row">
+            <input type="date" value={date} onChange={e => { setDate(e.target.value); if (endDate && e.target.value && endDate <= e.target.value) setEndDate(''); }} style={{ flex: 1.3 }} aria-label="日付" />
+            {multi ? (
+              <>
+                <span className="muted">〜</span>
+                <input type="date" value={endDate} min={date ? addDays(date, 1) : undefined} onChange={e => setEndDate(e.target.value)} style={{ flex: 1.3 }} aria-label="最後の日" />
+              </>
+            ) : (
+              <input type="time" value={time} onChange={e => setTime(e.target.value)} disabled={!date} style={{ flex: 1 }} aria-label="時刻" />
+            )}
           </div>
+          <div className="row wrap" style={{ marginTop: 8 }}>
+            {date && <button className="chip" onClick={() => { setDate(''); setTime(''); setEndDate(''); setRepeat(null); }}>日付なし</button>}
+            {date && !multi && !repeat && <button className="chip" onClick={() => { setEndDate(addDays(date, 1)); setTime(''); }}>複数日</button>}
+            {multi && <button className="chip" onClick={() => setEndDate('')}>1日だけ</button>}
+            {time && !multi && <button className="chip" onClick={() => setTime('')}>終日</button>}
+            {time && !multi && (
+              <select value={duration} onChange={e => setDuration(Number(e.target.value))} style={{ width: 'auto', padding: '6px 10px' }} aria-label="長さ">
+                {[...new Set([15, 30, 45, 60, 90, 120, 150, 180, 240, 300, 360, 480, duration])].sort((a, b) => a - b).map(m => (
+                  <option key={m} value={m}>{m < 60 ? `${m}分` : m % 60 ? `${Math.floor(m / 60)}時間${m % 60}分` : `${m / 60}時間`}</option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {time && !multi && (
+            <>
+              <div className="label">通知</div>
+              <div className="row wrap">
+                {REMINDER_CHOICES.map(r => (
+                  <button key={r} className={'chip' + (reminders.includes(r) ? ' on' : '')} onClick={() => toggleReminder(r)}>{REMINDER_LABELS[r]}</button>
+                ))}
+              </div>
+              {group && !group.is_personal && assignees === null && (
+                <label className="row small" style={{ marginTop: 10 }}>
+                  <input type="checkbox" checked={remindAll} onChange={e => setRemindAll(e.target.checked)} />
+                  グループのメンバー全員にも通知する
+                </label>
+              )}
+            </>
+          )}
+
+          {date && !multi && (
+            <>
+              <div className="label">繰り返し</div>
+              <div className="row wrap">
+                <button className={'chip' + (!repeat ? ' on' : '')} onClick={() => { setRepeat(null); setWeeklyOpen(false); }}>なし</button>
+                <button className={'chip' + (repeat?.freq === 'daily' ? ' on' : '')} onClick={() => { setWeeklyOpen(false); setRepeat({ freq: 'daily', interval: 1, weekdays: [], monthMode: 'day', until: repeat?.until || null }); }}>毎日</button>
+                <button className={'chip' + (isWeekdays && !weeklyOpen ? ' on' : '')} onClick={() => { setWeeklyOpen(false); setWeekly(WEEKDAYS); }}>平日</button>
+                <button className={'chip' + (repeat?.freq === 'weekly' && (weeklyOpen || !isWeekdays) ? ' on' : '')} onClick={() => { setWeeklyOpen(true); if (repeat?.freq !== 'weekly' || isWeekdays) setWeekly([baseWeekday]); }}>毎週</button>
+                <button className={'chip' + (repeat?.freq === 'monthly' ? ' on' : '')} onClick={() => { setWeeklyOpen(false); setRepeat({ freq: 'monthly', interval: 1, weekdays: [], monthMode: 'day', until: repeat?.until || null }); }}>毎月</button>
+              </div>
+              {/* 曜日ボタン：「毎週」のときだけ。押した曜日に毎週くり返す */}
+              {weeklyOpen && repeat?.freq === 'weekly' && (
+                <div className="weekday-row">
+                  {[0, 1, 2, 3, 4, 5, 6].map(w => (
+                    <button key={w} className={'chip' + (weeklyDays.includes(w) ? ' on' : '') + (w === 0 ? ' sun' : w === 6 ? ' sat' : '')}
+                      onClick={() => toggleWeekday(w)} aria-pressed={weeklyDays.includes(w)}>
+                      {WEEK_LABELS[w]}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {repeat?.freq === 'monthly' && date && (
+                <div className="row wrap" style={{ marginTop: 8 }}>
+                  <button className={'chip' + (repeat.monthMode !== 'nth' ? ' on' : '')} onClick={() => setRepeat({ ...repeat, monthMode: 'day' })}>毎月{Number(date.slice(8))}日</button>
+                  <button className={'chip' + (repeat.monthMode === 'nth' ? ' on' : '')} onClick={() => setRepeat({ ...repeat, monthMode: 'nth' })}>
+                    毎月第{Math.ceil(Number(date.slice(8)) / 7)}{WEEK_LABELS[weekday(date)]}曜日
+                  </button>
+                </div>
+              )}
+              {repeat && (
+                <div className="row" style={{ marginTop: 8 }}>
+                  <select value={repeat.interval || 1} onChange={e => setRepeat({ ...repeat, interval: Number(e.target.value) })} style={{ width: 'auto' }} aria-label="間隔">
+                    {[1, 2, 3, 4].map(n => <option key={n} value={n}>{n === 1 ? '毎回' : `${n}${repeat.freq === 'daily' ? '日' : repeat.freq === 'weekly' ? '週間' : 'か月'}に1回`}</option>)}
+                  </select>
+                  <span className="small muted">終了日</span>
+                  <input type="date" value={repeat.until || ''} onChange={e => setRepeat({ ...repeat, until: e.target.value || null })} style={{ flex: 1 }} aria-label="終了日" />
+                </div>
+              )}
+            </>
+          )}
+          </div>
+          <div className="editor-col">
+          {!hideGroup && (
+            <>
+              <div className="label">グループ</div>
+              <div className="row wrap">
+                {state.groups.map(g => (
+                  <button key={g.id} className={'chip' + (g.id === groupId ? ' on' : '')} onClick={() => pickGroup(g.id)}>
+                    <span className="dot" style={{ background: g.color, marginRight: 6 }} />{g.name}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
           {group && !group.is_personal && (
             <>
               <div className="label">表示する人</div>
@@ -253,7 +393,6 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
           {addingKind && (
             <div className="row" style={{ marginTop: 8 }}>
               <input type="text" value={kindName} onChange={e => setKindName(e.target.value)} maxLength={20} autoFocus
-                placeholder={group && !group.is_personal ? `「${group.name}」のみんなで使う種類` : '例：通院、勉強'}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); addKind(); } }} />
               <button className="btn small primary" onClick={addKind} disabled={!kindName.trim()}>追加</button>
               <button className="btn small" onClick={() => { setAddingKind(false); setKindName(''); }}>やめる</button>
@@ -273,7 +412,7 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
                   </div>
                 ))}
                 <div className="row" style={{ marginTop: 6 }}>
-                  <input type="text" value={itemText} onChange={e => setItemText(e.target.value)} placeholder="小麦粉、卵、牛乳"
+                  <input type="text" value={itemText} onChange={e => setItemText(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); addItem(); } }} />
                   <button className="btn small" onClick={addItem}>追加</button>
                 </div>
@@ -281,81 +420,8 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
             </>
           )}
 
-          <div className="label">日時</div>
-          <div className="row">
-            <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ flex: 1.3 }} />
-            <input type="time" value={time} onChange={e => setTime(e.target.value)} disabled={!date} style={{ flex: 1 }} />
-          </div>
-          <div className="row wrap" style={{ marginTop: 8 }}>
-            {date && <button className="chip" onClick={() => { setDate(''); setTime(''); setRepeat(null); }}>日付なし</button>}
-            {time && <button className="chip" onClick={() => setTime('')}>終日</button>}
-            {time && (
-              <select value={duration} onChange={e => setDuration(Number(e.target.value))} style={{ width: 'auto', padding: '6px 10px' }}>
-                {[...new Set([15, 30, 45, 60, 90, 120, 150, 180, 240, 300, 360, 480, duration])].sort((a, b) => a - b).map(m => (
-                  <option key={m} value={m}>{m < 60 ? `${m}分` : m % 60 ? `${Math.floor(m / 60)}時間${m % 60}分` : `${m / 60}時間`}</option>
-                ))}
-              </select>
-            )}
-          </div>
-
-          {time && (
-            <>
-              <div className="label">通知</div>
-              <div className="row wrap">
-                {REMINDER_ORDER.map(r => (
-                  <button key={r} className={'chip' + (reminders.includes(r) ? ' on' : '')} onClick={() => toggleReminder(r)}>{REMINDER_LABELS[r]}</button>
-                ))}
-              </div>
-              {group && !group.is_personal && assignees === null && (
-                <label className="row small" style={{ marginTop: 10 }}>
-                  <input type="checkbox" checked={remindAll} onChange={e => setRemindAll(e.target.checked)} />
-                  グループのメンバー全員にも通知する
-                </label>
-              )}
-            </>
-          )}
-
-          {date && (
-            <>
-              <div className="label">繰り返し</div>
-              <div className="row wrap">
-                <button className={'chip' + (!repeat ? ' on' : '')} onClick={() => setRepeat(null)}>なし</button>
-                <button className={'chip' + (repeat?.freq === 'daily' ? ' on' : '')} onClick={() => setRepeat({ freq: 'daily', interval: 1, weekdays: [], monthMode: 'day', until: repeat?.until || null })}>毎日</button>
-                <button className={'chip' + (isWeekdays ? ' on' : '')} onClick={() => setWeekly(WEEKDAYS)}>平日</button>
-                <button className={'chip' + (repeat?.freq === 'weekly' && !isWeekdays ? ' on' : '')} onClick={() => setWeekly([baseWeekday])}>毎週</button>
-                <button className={'chip' + (repeat?.freq === 'monthly' ? ' on' : '')} onClick={() => setRepeat({ freq: 'monthly', interval: 1, weekdays: [], monthMode: 'day', until: repeat?.until || null })}>毎月</button>
-              </div>
-              {/* 曜日ボタン：押した曜日に毎週くり返す（月〜金を押せば平日の予定になる） */}
-              <div className="weekday-row">
-                {[0, 1, 2, 3, 4, 5, 6].map(w => (
-                  <button key={w} className={'chip' + (weeklyDays.includes(w) ? ' on' : '') + (w === 0 ? ' sun' : w === 6 ? ' sat' : '')}
-                    onClick={() => toggleWeekday(w)} aria-pressed={weeklyDays.includes(w)}>
-                    {WEEK_LABELS[w]}
-                  </button>
-                ))}
-              </div>
-              {repeat?.freq === 'monthly' && date && (
-                <div className="row wrap" style={{ marginTop: 8 }}>
-                  <button className={'chip' + (repeat.monthMode !== 'nth' ? ' on' : '')} onClick={() => setRepeat({ ...repeat, monthMode: 'day' })}>毎月{Number(date.slice(8))}日</button>
-                  <button className={'chip' + (repeat.monthMode === 'nth' ? ' on' : '')} onClick={() => setRepeat({ ...repeat, monthMode: 'nth' })}>
-                    毎月第{Math.ceil(Number(date.slice(8)) / 7)}{WEEK_LABELS[weekday(date)]}曜日
-                  </button>
-                </div>
-              )}
-              {repeat && (
-                <div className="row" style={{ marginTop: 8 }}>
-                  <select value={repeat.interval || 1} onChange={e => setRepeat({ ...repeat, interval: Number(e.target.value) })} style={{ width: 'auto' }}>
-                    {[1, 2, 3, 4].map(n => <option key={n} value={n}>{n === 1 ? '毎回' : `${n}${repeat.freq === 'daily' ? '日' : repeat.freq === 'weekly' ? '週間' : 'か月'}に1回`}</option>)}
-                  </select>
-                  <span className="small muted">終了日</span>
-                  <input type="date" value={repeat.until || ''} onChange={e => setRepeat({ ...repeat, until: e.target.value || null })} style={{ flex: 1 }} />
-                </div>
-              )}
-            </>
-          )}
-
           <div className="label">詳細</div>
-          <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="例：営業部との定例会議" />
+          <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} />
 
           <div className="label">色</div>
           <div className="row wrap" style={{ gap: 10 }}>
@@ -363,9 +429,9 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
             {PALETTE.filter(c => c !== groupColor).slice(0, 6).map(c => (
               <button key={c} className={'swatch' + (color === c ? ' on' : '')} style={{ background: c }} onClick={() => setColor(c)} />
             ))}
-            <label className="small muted row" style={{ gap: 4 }}>
-              カスタム <input type="color" value={color || groupColor} onChange={e => setColor(e.target.value)} style={{ width: 34, height: 30, border: 0, background: 'none' }} />
-            </label>
+          </div>
+          </div>
+
           </div>
 
           </>)}
@@ -374,12 +440,26 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
           {err && <div className="err">{err}</div>}
         </div>
         <div className="sheet-foot">
-          {t && <button className="btn danger" onClick={remove}>削除</button>}
+          {t && <button className="btn danger" onClick={() => remove()}>削除</button>}
           <div className="grow" />
           <button className="btn" onClick={onClose}>キャンセル</button>
-          <button className="btn primary" onClick={save} disabled={busy}>保存</button>
+          <button className="btn primary" onClick={() => save()} disabled={busy}>保存</button>
         </div>
       </div>
+      {askScope && (
+        <div className="banner" onClick={e => { e.stopPropagation(); setAskScope(null); }}>
+          <div className="banner-card scope-card" role="dialog" aria-label={askScope === 'save' ? '繰り返しの予定を変更' : '繰り返しの予定を削除'} onClick={e => e.stopPropagation()}>
+            <h2>{askScope === 'save' ? '繰り返しの予定を変更' : '繰り返しの予定を削除'}</h2>
+            <div className="muted">{Number(openedDay.slice(5, 7))}月{Number(openedDay.slice(8))}日（{WEEK_LABELS[weekday(openedDay)]}）の分</div>
+            <div className="confirm-actions">
+              {([['one', 'この日だけ'], ['following', 'この日以降すべて'], ['all', 'すべて']] as [Scope, string][]).map(([s, label]) => (
+                <button key={s} className={'btn big' + (askScope === 'delete' ? ' danger' : '')} onClick={() => { setAskScope(null); if (askScope === 'save') save(s); else remove(s); }}>{label}</button>
+              ))}
+              <button className="btn" onClick={() => setAskScope(null)}>キャンセル</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

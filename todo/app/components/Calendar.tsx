@@ -380,6 +380,68 @@ export function WeekView(p: Props) {
   );
 }
 
+const MONTH_ROWS = 3; // 1日に見せる予定の数
+
+/** 複数日の予定か（出張など） */
+const isMulti = (o: Occ) => !o.task.repeat && !!o.task.end_date && !!o.task.date && o.task.end_date > o.task.date;
+
+/** 月表示の1週間。複数日の予定は、続く日をつないだ帯にして上に並べる */
+function MonthWeek({ week, p, month }: { week: string[]; p: Props; month: string }) {
+  const lists = week.map(d => occurrences(p.state, d, p.groupFilter, p.who).sort(byImportance));
+  // この週にかかる複数日の予定を、始まりの早い順・長い順に段に詰める
+  const seen = new Map<string, { o: Occ; s: number; e: number; lane: number }>();
+  lists.forEach((l, i) => l.filter(isMulti).forEach(o => {
+    const cur = seen.get(o.task.id);
+    if (cur) cur.e = i; else seen.set(o.task.id, { o, s: i, e: i, lane: -1 });
+  }));
+  const bars = [...seen.values()].sort((a, b) => a.s - b.s || (b.e - b.s) - (a.e - a.s));
+  const lanes: number[][] = []; // 段ごとに、使っている日
+  for (const bar of bars) {
+    let lane = 0;
+    while (lanes[lane]?.some(i => i >= bar.s && i <= bar.e)) lane++;
+    (lanes[lane] ||= []).push(...Array.from({ length: bar.e - bar.s + 1 }, (_, k) => bar.s + k));
+    bar.lane = lane;
+  }
+  const shownBars = bars.filter(b => b.lane < MONTH_ROWS);
+  return (
+    <div className="mweek">
+      {week.map((d, i) => {
+        // この日にかかっている帯の段の数だけ空けて、その下に1日だけの予定
+        const used = shownBars.filter(b => b.s <= i && b.e >= i);
+        const top = used.length ? Math.max(...used.map(b => b.lane)) + 1 : 0;
+        const singles = lists[i].filter(o => !isMulti(o));
+        const room = Math.max(0, MONTH_ROWS - top);
+        const hidden = lists[i].length - used.length - Math.min(room, singles.length);
+        return (
+          <button key={d} className={'mcell' + (d.slice(0, 7) !== month ? ' other' : '') + (d === p.today ? ' today' : '')} onClick={() => p.onPickDay(d)}>
+            <span className="n">{Number(d.slice(8))}</span>
+            {top > 0 && <span className="mspace" style={{ ['--lanes' as string]: top }} />}
+            {singles.slice(0, room).map(o => (
+              <span key={o.task.id} className="mtitle" style={{ background: o.color + '4d', textDecoration: o.done ? 'line-through' : undefined, opacity: o.done ? .5 : 1 }}>
+                {o.task.starred && <span className="star-mark">★</span>}{o.task.time && <span className="mt-time">{o.task.time + ' '}</span>}{o.task.title}
+              </span>
+            ))}
+            {hidden > 0 && <span className="mtitle muted mmore">ほか{hidden}件</span>}
+          </button>
+        );
+      })}
+      {shownBars.map(({ o, s, e, lane }) => {
+        const starts = o.task.date! >= week[0];
+        const ends = o.task.end_date! <= week[6];
+        return (
+          <span key={o.task.id} className={'mbar' + (starts ? ' start' : '') + (ends ? ' end' : '')} aria-hidden
+            style={{
+              ['--lane' as string]: lane, left: `calc(${(s / 7) * 100}% + ${starts ? 3 : 0}px)`, width: `calc(${((e - s + 1) / 7) * 100}% - ${(starts ? 3 : 0) + (ends ? 3 : 0)}px)`,
+              background: o.color + '66', textDecoration: o.done ? 'line-through' : undefined, opacity: o.done ? .5 : 1,
+            }}>
+            {o.task.starred && <span className="star-mark">★</span>}{o.task.title}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 export function MonthView(p: Props) {
   const first = p.cursor.slice(0, 8) + '01';
   const gridStart = addDays(first, -weekday(first));
@@ -387,27 +449,11 @@ export function MonthView(p: Props) {
   const days = Array.from({ length: 42 }, (_, i) => addDays(gridStart, i));
   // 6週目が丸ごと翌月なら省く
   const shown = days[35].slice(0, 7) !== month ? days.slice(0, 35) : days;
+  const weeks = Array.from({ length: shown.length / 7 }, (_, i) => shown.slice(i * 7, i * 7 + 7));
   return (
     <div className="month">
       {WEEK_LABELS.map((w, i) => <div key={w} className="wh" style={{ color: i === 0 ? '#dc2626' : i === 6 ? '#2563eb' : undefined }}>{w}</div>)}
-      {shown.map(d => {
-        // 星付き → 設定した時間が長い順（長いほど重要）に上から3件
-        const list = occurrences(p.state, d, p.groupFilter, p.who).sort(byImportance);
-        return (
-          <button key={d} className={'mcell' + (d.slice(0, 7) !== month ? ' other' : '') + (d === p.today ? ' today' : '')} onClick={() => p.onPickDay(d)}>
-            <span className="n">{Number(d.slice(8))}</span>
-            <div className="mdots">
-              {list.slice(0, 6).map(o => <span key={o.task.id} className="dot" style={{ background: o.color, width: 7, height: 7, opacity: o.done ? .35 : 1 }} />)}
-            </div>
-            {list.slice(0, 3).map(o => (
-              <span key={o.task.id} className="mtitle" style={{ background: o.color + '4d', textDecoration: o.done ? 'line-through' : undefined, opacity: o.done ? .5 : 1 }}>
-                {o.task.starred && <span className="star-mark">★</span>}{o.task.time && <span className="mt-time">{o.task.time + ' '}</span>}{o.task.title}
-              </span>
-            ))}
-            {list.length > 3 && <span className="mtitle muted">ほか{list.length - 3}件</span>}
-          </button>
-        );
-      })}
+      {weeks.map(w => <MonthWeek key={w[0]} week={w} p={p} month={month} />)}
     </div>
   );
 }

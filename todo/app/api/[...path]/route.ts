@@ -98,6 +98,8 @@ function cleanTask(b: any, partial: boolean) {
   if (has('kind')) out.kind = KINDS.includes(b.kind) ? b.kind : 'general';
   if (has('color')) out.color = b.color && COLORS.test(b.color) ? b.color : null;
   if (has('date')) out.date = b.date && DATE.test(b.date) ? b.date : null;
+  // 複数日の予定：始まりより後の日だけ。繰り返しとは一緒に使わない
+  if (has('end_date')) out.end_date = b.end_date && DATE.test(b.end_date) && out.date && b.end_date > (out.date as string) && !b.repeat ? b.end_date : null;
   if (has('time')) out.time = b.time && TIME.test(b.time) ? b.time : null;
   if (has('duration_min')) out.duration_min = Math.min(24 * 60, Math.max(5, Number(b.duration_min) || 60));
   if (has('reminders')) out.reminders = Array.isArray(b.reminders) ? [...new Set(b.reminders.map(String))].filter(r => REMINDERS.includes(r as string)) : [];
@@ -112,6 +114,7 @@ function cleanTask(b: any, partial: boolean) {
         weekdays: Array.isArray(r.weekdays) ? r.weekdays.map(Number).filter((n: number) => n >= 0 && n <= 6) : [],
         monthMode: r.monthMode === 'nth' ? 'nth' : 'day',
         until: r.until && DATE.test(r.until) ? r.until : null,
+        except: Array.isArray(r.except) ? [...new Set(r.except.filter((d: unknown) => typeof d === 'string' && DATE.test(d)))].sort().slice(-300) : [],
       });
     } else out.repeat = null;
   }
@@ -234,9 +237,9 @@ route('POST', 'tasks', async ({ body }) => {
   // 表示する人：指定がなければ「自分だけ」（共通にするときは 'all'）
   const assignees = await cleanAssignees(groupId, g.is_personal, 'assignees' in body ? body.assignees : [u.id], u.id);
   const t = await one<{ id: string }>(
-    `INSERT INTO tasks (user_id, group_id, status, title, description, kind, kind_id, assignees, color, date, time, duration_min, reminders, remind_all, repeat, starred, detailed_at)
-     VALUES ($1,$2,'ready',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, now()) RETURNING id`,
-    [u.id, groupId, f.title, f.description, kindId ? 'general' : f.kind, kindId, assignees, f.color, f.date, f.time, f.duration_min, f.reminders, f.remind_all, f.repeat, f.starred]);
+    `INSERT INTO tasks (user_id, group_id, status, title, description, kind, kind_id, assignees, color, date, end_date, time, duration_min, reminders, remind_all, repeat, starred, detailed_at)
+     VALUES ($1,$2,'ready',$3,$4,$5,$6,$7,$8,$9,$16,$10,$11,$12,$13,$14,$15, now()) RETURNING id`,
+    [u.id, groupId, f.title, f.description, kindId ? 'general' : f.kind, kindId, assignees, f.color, f.date, f.time, f.duration_min, f.reminders, f.remind_all, f.repeat, f.starred, f.end_date]);
   if (Array.isArray(body.items)) {
     for (const [i, label] of body.items.map((s: unknown) => str(s, 80)).filter(Boolean).entries()) {
       await q('INSERT INTO task_items (task_id, label, position) VALUES ($1,$2,$3)', [t!.id, label, i]);
@@ -248,7 +251,12 @@ route('POST', 'tasks', async ({ body }) => {
 
 route('PATCH', 'tasks/:id', async ({ body, params }) => {
   const u = await requireUser();
-  const t = await requireTask(u.id, params[0]);
+  await patchTask(u, await requireTask(u.id, params[0]), body);
+  return { ok: true };
+});
+
+/** 予定を書き換える（PATCH と、繰り返しの「この日だけ／この日以降」で共通） */
+async function patchTask(u: User, t: any, body: any) {
   const f = cleanTask(body, true);
   let groupId = t.group_id;
   if (body.group_id && body.group_id !== t.group_id) {
@@ -285,7 +293,70 @@ route('PATCH', 'tasks/:id', async ({ body, params }) => {
       await notifyMembers(groupId, u.id, 'created', t.id, `${u.name}さんが「${f.title ?? t.title}」を設定しました`, null, who);
     }
   }
-  return { ok: true };
+}
+
+/**
+ * 繰り返しの予定の一部だけを変える・消す。
+ * scope = 'one'：その日だけ（繰り返しからその日を外し、変更するならその日だけの予定を別に作る）
+ * scope = 'following'：その日以降すべて（元の繰り返しは前の日で終わらせ、変更するならその日から新しい繰り返しを作る）
+ * 完了の記録・絵文字・「完了しましたか？」の返事は、新しい予定に移す。「すべて」はふつうの PATCH / DELETE を使う
+ */
+route('POST', 'tasks/:id/split', async ({ body, params }) => {
+  const u = await requireUser();
+  const t = await requireTask(u.id, params[0]);
+  const day = String(body.day || '');
+  const scope = body.scope === 'one' ? 'one' : body.scope === 'following' ? 'following' : null;
+  if (!t.repeat || !DATE.test(day) || !scope) throw bad('繰り返しの予定と日付を指定してください');
+  // pg は日付をサーバーの時刻の0時の Date で返すので、その日付のまま文字にする
+  const d0 = t.date as Date | string;
+  const start = d0 instanceof Date ? `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}-${String(d0.getDate()).padStart(2, '0')}` : String(d0).slice(0, 10);
+  if (day < start) throw bad('繰り返しが始まる前の日です');
+  const rep = { ...t.repeat, except: [...(t.repeat.except || [])] };
+  const remove = !!body.delete;
+
+  // この日以降を最初の日から → すべてと同じ
+  if (scope === 'following' && day === start) {
+    if (remove) { await q('DELETE FROM tasks WHERE id = $1', [t.id]); return { ok: true }; }
+    await patchTask(u, t, body);
+    return { ok: true, id: t.id };
+  }
+
+  const prevDay = new Date(Date.parse(day + 'T00:00:00Z') - 86400000).toISOString().slice(0, 10);
+  const parentRepeat = scope === 'one'
+    ? { ...rep, except: [...new Set([...rep.except, day])].sort() }
+    : { ...rep, until: prevDay, except: rep.except.filter((d: string) => d < day) };
+  const newId = await tx(async c => {
+    await c.query('UPDATE tasks SET repeat = $2, updated_at = now() WHERE id = $1', [t.id, JSON.stringify(parentRepeat)]);
+    const range = scope === 'one' ? 'occ_date = $2' : 'occ_date >= $2';
+    if (remove) {
+      for (const tbl of ['task_done', 'reactions', 'task_followups']) await c.query(`DELETE FROM ${tbl} WHERE task_id = $1 AND ${range}`, [t.id, day]);
+      return null;
+    }
+    // 元の予定を写して、新しい予定を作る
+    const copyRepeat = scope === 'one' ? null : JSON.stringify({ ...rep, except: rep.except.filter((d: string) => d >= day) });
+    const n = (await c.query(
+      `INSERT INTO tasks (user_id, group_id, status, title, description, kind, kind_id, assignees, color, date, time, duration_min, reminders, remind_all, repeat, starred, captured_at, detailed_at)
+       SELECT user_id, group_id, status, title, description, kind, kind_id, assignees, color, $2, time, duration_min, reminders, remind_all, $3, starred, captured_at, detailed_at
+         FROM tasks WHERE id = $1 RETURNING id`, [t.id, day, copyRepeat])).rows[0].id as string;
+    if (scope === 'one') {
+      // その日の完了は、ふつうの予定の完了にする
+      const d = (await c.query('DELETE FROM task_done WHERE task_id = $1 AND occ_date = $2 RETURNING user_id, done_at', [t.id, day])).rows[0];
+      if (d) await c.query('UPDATE tasks SET done_at = $2, done_by = $3 WHERE id = $1', [n, d.done_at, d.user_id]);
+    } else {
+      await c.query(`UPDATE task_done SET task_id = $3 WHERE task_id = $1 AND ${range}`, [t.id, day, n]);
+    }
+    await c.query(`UPDATE reactions SET task_id = $3 WHERE task_id = $1 AND ${range}`, [t.id, day, n]);
+    await c.query(`UPDATE task_followups SET task_id = $3 WHERE task_id = $1 AND ${range}`, [t.id, day, n]);
+    return n;
+  });
+  if (!newId) return { ok: true };
+  // 新しい予定に、入力画面で変えた内容を入れる（「この日だけ」は繰り返さない）
+  const changes = { ...body };
+  delete changes.day; delete changes.scope; delete changes.delete;
+  if (scope === 'one') changes.repeat = null;
+  else if (changes.repeat) changes.repeat = { ...changes.repeat, except: rep.except.filter((d: string) => d >= day) };
+  await patchTask(u, await requireTask(u.id, newId), changes);
+  return { ok: true, id: newId };
 });
 
 route('DELETE', 'tasks/:id', async ({ params }) => {

@@ -26,7 +26,7 @@ g AS (
 ),
 t AS (
   SELECT t.id, t.user_id, t.group_id, t.status, t.title, t.description, t.kind, t.kind_id, t.assignees, t.starred, t.color,
-         to_char(t.date, 'YYYY-MM-DD') AS date, t.time, t.duration_min, t.reminders, t.remind_all, t.repeat,
+         to_char(t.date, 'YYYY-MM-DD') AS date, to_char(t.end_date, 'YYYY-MM-DD') AS end_date, t.time, t.duration_min, t.reminders, t.remind_all, t.repeat,
          t.captured_at, t.detailed_at, t.done_at, t.done_by, t.updated_at, t.created_at, t.date AS sort_date
     FROM tasks t
    WHERE t.group_id IN (SELECT group_id FROM my_groups)

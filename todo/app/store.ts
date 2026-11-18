@@ -2,6 +2,7 @@
 // 押した瞬間に画面を書き換え、サーバーへの送信と最新データの取り直しは裏で行うための仕組み。
 // （以前は「送信 → 全部のデータを取り直す → やっと画面が変わる」だったので、押してから反映まで待たされていた）
 import type { Checklist, Item, State, Task } from './lib';
+import { addDays } from '@/lib/time';
 
 type Patch = (s: State) => State;
 
@@ -88,6 +89,31 @@ export const P = {
   addReaction: (taskId: string, day: string, me: string, emoji: string): Patch => s => ({
     ...s, reactions: [...s.reactions, { task_id: taskId, occ_date: day, user_id: me, emoji }],
   }),
+  /** 繰り返しの予定の「この日だけ／この日以降」の変更・削除（サーバーの tasks/:id/split と同じ動き） */
+  splitTask: (taskId: string, day: string, scope: 'one' | 'following', fields: Partial<Task> | null): Patch => s => {
+    const t = s.tasks.find(x => x.id === taskId);
+    if (!t?.repeat || !t.date) return s;
+    if (scope === 'following' && day === t.date) {
+      return fields ? P.updateTask(taskId, fields)(s) : P.removeTask(taskId)(s);
+    }
+    const except = t.repeat.except || [];
+    const parentRepeat = scope === 'one'
+      ? { ...t.repeat, except: [...new Set([...except, day])].sort() }
+      : { ...t.repeat, until: addDays(day, -1), except: except.filter(d => d < day) };
+    let tasks = s.tasks.map(x => (x.id === taskId ? { ...x, repeat: parentRepeat } : x));
+    let done = s.done;
+    if (fields) {
+      const id = tmpId();
+      const wasDone = s.done.find(d => d.task_id === taskId && d.occ_date === day);
+      const repeat = scope === 'one' ? null : { ...(fields.repeat || t.repeat), except: except.filter(d => d >= day) };
+      tasks = [...tasks, {
+        ...t, ...fields, id, date: fields.date || day, repeat, updated_at: new Date().toISOString(),
+        done_at: scope === 'one' && wasDone ? wasDone.done_at || new Date().toISOString() : null, done_by: scope === 'one' && wasDone ? wasDone.user_id : null,
+      }];
+      done = s.done.flatMap(d => (d.task_id !== taskId ? [d] : scope === 'one' ? (d.occ_date === day ? [] : [d]) : d.occ_date >= day ? [{ ...d, task_id: id }] : [d]));
+    }
+    return { ...s, tasks, done };
+  },
   setFollowup: (taskId: string, day: string, state: 'snoozed' | 'held'): Patch => s => ({
     ...s, followups: [...(s.followups || []).filter(f => !(f.task_id === taskId && f.occ_date === day)),
       { task_id: taskId, occ_date: day, state, next_at: state === 'snoozed' ? new Date(Date.now() + 15 * 60000).toISOString() : null, snooze_count: 0 }],
@@ -99,7 +125,7 @@ export function draftTask(s: State, fields: Partial<Task>): Task {
   const now = new Date().toISOString();
   return {
     id: tmpId(), user_id: s.me!.id, group_id: s.groups.find(g => g.is_personal)!.id, status: 'ready', title: '', description: '',
-    kind: 'general', kind_id: null, assignees: null, starred: false, color: null, date: null, time: null, duration_min: 60,
+    kind: 'general', kind_id: null, assignees: null, starred: false, color: null, date: null, end_date: null, time: null, duration_min: 60,
     reminders: [], remind_all: false, repeat: null, captured_at: now, detailed_at: now, done_at: null, done_by: null, updated_at: now,
     ...fields,
   };

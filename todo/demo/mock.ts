@@ -42,6 +42,8 @@ const tasks: Any[] = [
   task({ group_id: 'gw', starred: true, title: '定例会議', kind: 'meeting', date: mon, time: '10:00', description: '営業部との定例', repeat: { freq: 'weekly', interval: 1, weekdays: [1, 3], monthMode: 'day', until: null } }),
   task({ group_id: 'gf', user_id: 'u4', title: 'ゴミ出し', kind: 'duty', date: mon, time: '07:30', duration_min: 15, remind_all: true, repeat: { freq: 'weekly', interval: 1, weekdays: [2, 5], monthMode: 'day', until: null } }),
   task({ title: '歯医者', kind: 'reminder', date: addDays(T, 1), time: '18:30' }),
+  // 複数日の予定（出張）：月表示で続く日をつないで出す
+  task({ group_id: 'gw', title: '大阪出張', date: addDays(T, 2), end_date: addDays(T, 6), assignees: ['me'], reminders: [] }),
   task({ title: 'ランニング', date: addDays(T, 2), time: '06:30', duration_min: 45, color: '#EBC1FF' }),
   task({ group_id: 'gw', user_id: 'u2', assignees: ['u2'], title: '見積書を送る', date: addDays(T, 1), time: '11:00', duration_min: 30 }),
   task({ group_id: 'gw', user_id: 'u3', assignees: ['u3'], title: 'B社・C社 外回り', kind_id: 'k1', date: T, time: hh(H), duration_min: 150 }),
@@ -114,7 +116,7 @@ function pick(b: Any, keys: string[]) {
 const assigneesFrom = (groupId: string, raw: unknown) =>
   groupId === 'gp' || raw === 'all' || raw === null ? null : Array.isArray(raw) && raw.length ? raw : ['me'];
 const followups: Any[] = [];
-const TASK_KEYS = ['title', 'description', 'kind', 'kind_id', 'starred', 'color', 'date', 'time', 'duration_min', 'reminders', 'remind_all', 'repeat', 'group_id'];
+const TASK_KEYS = ['title', 'description', 'kind', 'kind_id', 'starred', 'color', 'date', 'end_date', 'time', 'duration_min', 'reminders', 'remind_all', 'repeat', 'group_id'];
 
 function state(day: string | null) {
   if (!loggedIn) return { me: null };
@@ -172,6 +174,34 @@ async function handle(path: string, method: string, b: Any): Promise<any> {
       if (!t.time) t.reminders = [];
       return { ok: true };
     }
+  }
+  // 繰り返しの予定の「この日だけ／この日以降」（サーバーの tasks/:id/split と同じ動き）
+  if (seg[0] === 'tasks' && seg[2] === 'split') {
+    const t = findTask(seg[1]);
+    const day = b.day, scope = b.scope;
+    const except: string[] = t.repeat.except || [];
+    if (scope === 'following' && day === t.date) {
+      if (b.delete) tasks.splice(tasks.indexOf(t), 1);
+      else Object.assign(t, pick(b, TASK_KEYS), { updated_at: new Date().toISOString() });
+      return { ok: true };
+    }
+    const prev = addDays(day, -1);
+    const oldRepeat = { ...t.repeat };
+    t.repeat = scope === 'one' ? { ...oldRepeat, except: [...new Set([...except, day])].sort() } : { ...oldRepeat, until: prev, except: except.filter(d => d < day) };
+    const inRange = (d: string) => (scope === 'one' ? d === day : d >= day);
+    if (b.delete) {
+      for (let i = done.length - 1; i >= 0; i--) if (done[i].task_id === t.id && inRange(done[i].occ_date)) done.splice(i, 1);
+      return { ok: true };
+    }
+    const n = task({ ...t, id: id(), ...pick(b, TASK_KEYS), date: b.date || day, repeat: scope === 'one' ? null : { ...(b.repeat || oldRepeat), except: except.filter(d => d >= day) }, done_at: null, done_by: null });
+    tasks.push(n);
+    for (let i = done.length - 1; i >= 0; i--) {
+      const d = done[i];
+      if (d.task_id !== t.id || !inRange(d.occ_date)) continue;
+      if (scope === 'one') { n.done_at = d.done_at || new Date().toISOString(); n.done_by = d.user_id; done.splice(i, 1); } else d.task_id = n.id;
+    }
+    reactions.forEach(r => { if (r.task_id === t.id && inRange(r.occ_date)) r.task_id = n.id; });
+    return { ok: true, id: n.id };
   }
   if (seg[0] === 'tasks' && seg[2] === 'done') { const t = findTask(seg[1]); setDone(t, b.day, b.done !== false); return { ok: true }; }
   if (seg[0] === 'tasks' && seg[2] === 'items' && !seg[3]) {

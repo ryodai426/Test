@@ -1,6 +1,19 @@
 {
   "redirects": [
-    { "source": "/docs/:path*", "destination": "/", "permanent": false },
-    { "source": "/todo/:path*", "destination": "/", "permanent": false }
-  ]
+    {
+      "source": "/docs/:path*",
+      "destination": "/",
+      "permanent": false
+    },
+    {
+      "source": "/todo/:path*",
+      "destination": "/",
+      "permanent": false
+    }
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "claude/**": false
+    }
+  }
 }

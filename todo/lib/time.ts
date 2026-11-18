@@ -7,11 +7,13 @@ export type Repeat = {
   weekdays?: number[];        // 0=日 … 6=土（weekly のとき）
   monthMode?: 'day' | 'nth';  // 毎月○日 / 毎月第n○曜日
   until?: string | null;
+  except?: string[];          // 繰り返しから外した日（「この日だけ」変更・削除した日）
 };
 
 export type TaskLike = {
   id: string;
   date: string | null;
+  end_date?: string | null;  // 複数日の予定の最後の日（出張など。繰り返しとは一緒に使わない）
   time: string | null;
   repeat: Repeat | null;
   reminders: string[];
@@ -42,11 +44,12 @@ export function daysBetween(a: string, b: string): number {
 }
 
 /** その日に、このタスクがあるか */
-export function occursOn(t: Pick<TaskLike, 'date' | 'repeat'>, day: string): boolean {
+export function occursOn(t: Pick<TaskLike, 'date' | 'repeat' | 'end_date'>, day: string): boolean {
   if (!t.date) return false;
-  if (!t.repeat) return t.date === day;
+  if (!t.repeat) return t.end_date && t.end_date > t.date ? day >= t.date && day <= t.end_date : t.date === day;
   if (day < t.date) return false;
   if (t.repeat.until && day > t.repeat.until) return false;
+  if (t.repeat.except?.includes(day)) return false;
   const interval = Math.max(1, t.repeat.interval || 1);
   const diff = daysBetween(t.date, day);
   switch (t.repeat.freq) {
@@ -102,14 +105,16 @@ export const REMINDER_LABELS: Record<string, string> = {
   '5': '5分前',
   '0': '時間ちょうど',
 };
+/** 入力画面で選べる通知。時間ちょうどは選ばなくても、時刻のある予定すべてで自動で鳴らす（1時間前・10分前は前に入れた予定だけ） */
+export const REMINDER_CHOICES = ['eve', '30', '5'];
 
 /** 種類を選ぶだけで、通知のタイミングが自動で決まる（入力の手間を減らす） */
 export const KIND_PRESETS: Record<string, { label: string; icon: string; reminders: string[] }> = {
-  general: { label: '一般', icon: '📝', reminders: ['0'] },
-  meeting: { label: '会議', icon: '👥', reminders: ['30', '5', '0'] },
-  duty: { label: '当番', icon: '🌅', reminders: ['eve', '30', '0'] },
+  general: { label: '一般', icon: '📝', reminders: [] },
+  meeting: { label: '会議', icon: '👥', reminders: ['30', '5'] },
+  duty: { label: '当番', icon: '🌅', reminders: ['eve', '30'] },
   shopping: { label: '買い物', icon: '🛒', reminders: [] },
-  reminder: { label: 'リマインダー', icon: '⏰', reminders: ['0'] },
+  reminder: { label: 'リマインダー', icon: '⏰', reminders: [] },
 };
 
 export function reminderMessage(title: string, key: string, time: string): string {
@@ -120,9 +125,10 @@ export function reminderMessage(title: string, key: string, time: string): strin
 
 /** あるタスクの、ある日の分のリマインドが鳴る時刻（UTC ms） */
 export function reminderTimes(t: TaskLike, day: string, tz: string): { key: string; at: number }[] {
-  if (!t.time || !t.reminders?.length) return [];
+  if (!t.time) return [];
   const start = zonedToUtc(day, t.time, tz);
-  return t.reminders.map(key => ({
+  // 時間ちょうどは、どの予定でも必ず鳴らす
+  return [...new Set([...(t.reminders || []), '0'])].map(key => ({
     key,
     at: key === 'eve' ? zonedToUtc(addDays(day, -1), '20:00', tz) : start - Number(key) * 60000,
   }));

@@ -25,8 +25,8 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // ページ本体：まず最新を取りに行く（新しい版をすぐ反映するため）。
-  // 電波が悪くて3秒たっても返ってこないとき・つながらないときだけ、保存したページを出す
+  // ページ本体：保存したページをすぐ出し（開くのを待たせない）、裏で最新を取って次に備える。
+  // 新しい版が出ていたら、画面がサーバーの版と比べて気づき、最新のページを保存し直してから読み込み直す（App.tsx の reloadIfOutdated）
   if (req.mode === 'navigate') {
     event.respondWith((async () => {
       const cache = await caches.open(CACHE);
@@ -34,14 +34,8 @@ self.addEventListener('fetch', event => {
         if (res.ok && url.pathname === '/') cache.put('/', res.clone());
         return res;
       });
-      event.waitUntil(fresh.catch(() => {}));
-      const slow = new Promise(r => setTimeout(r, 3000, null));
-      try {
-        const res = await Promise.race([fresh, slow]);
-        if (res) return res;
-      } catch { /* つながらない */ }
       const hit = url.pathname === '/' ? await cache.match('/') : null;
-      if (hit) return hit;
+      if (hit) { event.waitUntil(fresh.catch(() => {})); return hit; }
       try { return await fresh; } catch { return Response.error(); }
     })());
   }

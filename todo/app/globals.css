@@ -207,21 +207,33 @@ kbd { font-family: var(--display); font-size: 11.5px; font-weight: var(--w-base)
 /* ---- 月表示 ---- */
 .month { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
 .month .wh { font-size: 12px; font-weight: var(--w-base); text-align: center; color: var(--sub); padding: 10px 0; border-bottom: 1.5px solid var(--line-soft); }
-.mcell { min-height: 98px; border-bottom: 1px solid var(--line-soft); border-left: 1px solid var(--line-soft); padding: 5px; text-align: left; display: flex; flex-direction: column; gap: 3px; min-width: 0; background: var(--card); }
-.mcell:nth-child(7n+1) { border-left: 0; }
-.mcell .n { font-family: var(--display); font-size: 15px; font-weight: var(--w-base); width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: 50%; }
+/* 1週間の行。複数日の予定の帯（.mbar）は、日付の下から段ごとに重ねる（--mhead・--mlane は .mtitle の高さと揃える） */
+.mweek { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); position: relative; --mhead: 38px; --mlane: 22px; --mgap: 3px; }
+.mcell { min-height: 98px; border-bottom: 1px solid var(--line-soft); border-left: 1px solid var(--line-soft); padding: 5px; text-align: left; display: flex; flex-direction: column; gap: var(--mgap); min-width: 0; background: var(--card); }
+.mcell:first-child { border-left: 0; }
+.mspace { display: block; flex: none; height: calc(var(--lanes) * var(--mlane) - var(--mgap)); }
+.mbar { position: absolute; top: calc(var(--mhead) + var(--lane) * var(--mlane)); height: calc(var(--mlane) - var(--mgap)); pointer-events: none; z-index: 1;
+  font-size: 11px; font-weight: var(--w-base); line-height: calc(var(--mlane) - var(--mgap)); padding: 0 6px; white-space: nowrap; overflow: hidden; text-overflow: clip; }
+.mbar.start { border-top-left-radius: 6px; border-bottom-left-radius: 6px; }
+.mbar.end { border-top-right-radius: 6px; border-bottom-right-radius: 6px; }
+.mcell .n { font-family: var(--display); font-size: 15px; font-weight: var(--w-base); width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: 50%; flex: none; }
 .mcell.other { background: #FAF9F6; }
 .mcell.other .n { color: var(--faint); }
 .mcell.today .n { background: var(--green); }
 .mcell:hover { background: var(--green-pale); }
 .mdots { display: flex; flex-wrap: wrap; gap: 3px; padding: 0 4px; }
-.mtitle { font-size: 11px; font-weight: var(--w-base); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 2px 6px; border-radius: 6px; }
+.mtitle { flex: none; font-size: 11px; font-weight: var(--w-base); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: calc(var(--mlane) - var(--mgap)); line-height: calc(var(--mlane) - var(--mgap)); padding: 0 6px; border-radius: 6px; }
+.mmore { background: none; }
 /* スマホの月表示：点ではなく、予定の名前を上から3件まで（入りきらない分は切る） */
 @media (max-width: 899px) {
   .mdots { display: none; }
-  .mcell { min-height: 92px; padding: 3px 2px; gap: 2px; }
-  .mcell .n { font-size: 13px; width: 24px; height: 24px; align-self: center; }
-  .mtitle { font-size: 10px; line-height: 1.35; padding: 1px 3px; border-radius: 4px; text-overflow: clip; }
+  .mweek { --mhead: 29px; --mlane: 17px; --mgap: 2px; }
+  .mcell { min-height: 92px; padding: 3px 2px; }
+  .mcell .n { font-size: 13px; width: 24px; height: 24px; align-self: center; flex: none; }
+  .mtitle { font-size: 10px; padding: 0 3px; border-radius: 4px; text-overflow: clip; }
+  .mbar { font-size: 10px; padding: 0 3px; }
+  .mbar.start { border-top-left-radius: 4px; border-bottom-left-radius: 4px; }
+  .mbar.end { border-top-right-radius: 4px; border-bottom-right-radius: 4px; }
   .mtitle .star-mark { margin-right: 1px; }
   .mt-time { display: none; } /* 幅が狭いので名前を優先（時刻は DAY で見る） */
 }
@@ -528,3 +540,20 @@ b, strong { font-weight: var(--w-head); }
 
 /* Tab で選んでいる切り替えボタン */
 .toolbar [data-nav]:focus-visible { outline: 3px solid var(--sky); outline-offset: 2px; position: relative; z-index: 1; }
+/* 繰り返しの予定：どこまで変えるか */
+.scope-card { background: var(--card); }
+.scope-card .btn.big.danger { background: #FFE9E5; color: var(--danger); }
+.scope-card .btn.big:not(.danger) { background: var(--green); }
+.scope-card .btn.big { justify-content: center; }
+/* 予定・タスクの入力：PC は左右2列にして、スクロールしなくても最後まで見られるように */
+@media (min-width: 900px) {
+  .sheet.sheet-wide { max-width: 940px; max-height: 94dvh; }
+  .sheet-wide .editor-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 32px; }
+  .sheet-wide .label { margin: 14px 0 7px; }
+  .sheet-wide .chip { padding: 6px 11px; font-size: 13.5px; }
+  .sheet-wide .weekday-row { margin-top: 8px; }
+  .sheet-wide .weekday-row .chip { padding: 6px 0; }
+  .sheet-wide textarea { min-height: 0; }
+  .sheet-wide .sheet-head { padding-bottom: 4px; }
+}
+.banner.confirm-delete { z-index: 95; }
