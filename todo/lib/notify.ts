@@ -99,6 +99,16 @@ export async function runDueReminders(now = Date.now()): Promise<{ sent: number 
     }
   }
 
+  // ③' 夜20時に「今日の振り返り」（スキップにしていない人だけ）
+  const reviewers = await q<{ id: string; tz: string }>('SELECT id, tz FROM users WHERE NOT review_skip');
+  for (const r of reviewers) {
+    const { date } = nowIn(r.tz, new Date(now));
+    const at = zonedToUtc(date, '20:00', r.tz);
+    if (at > now || at < windowStart) continue;
+    if (!(await claim(`review:${r.id}:${date}`))) continue;
+    sent += await pushTo(r.id, { title: '🌙 今日もおつかれさまでした', body: '今日の振り返りを見ますか？', url: '/?review=1', tag: `review-${date}` });
+  }
+
   // ③ 持ち物チェックリスト（時間で表示）
   const lists = await q<{ id: string; user_id: string; name: string; show_at: string; weekdays: number[]; tz: string }>(
     `SELECT c.id, c.user_id, c.name, c.show_at, c.weekdays, u.tz FROM checklists c JOIN users u ON u.id = c.user_id

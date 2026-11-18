@@ -413,7 +413,9 @@ export async function currentPushSub(): Promise<PushSubscription | null> {
   }
 }
 
-export function SettingsPanel({ state, onClose, notify }: { state: State; onClose: () => void; notify: (m: string) => void }) {
+export function SettingsPanel({ state, onClose, notify, reload, onReview }: {
+  state: State; onClose: () => void; notify: (m: string) => void; reload: () => Promise<void> | void; onReview: () => void;
+}) {
   const [sub, setSub] = useState<PushSubscription | null>(null);
   const [perm, setPerm] = useState<string>(typeof Notification !== 'undefined' ? Notification.permission : 'unsupported');
   const [code, setCode] = useState<string | null>(null);
@@ -461,6 +463,17 @@ export function SettingsPanel({ state, onClose, notify }: { state: State; onClos
     <Sheet title="設定" icon="gear" onClose={onClose}>
       <div className="label">ログイン中</div>
       <div><b>{state.me!.name}</b> さん</div>
+
+      <div className="label">今日の振り返り</div>
+      <button className="btn primary block" onClick={onReview}>今日の振り返りを見る</button>
+      <label className="li" style={{ marginTop: 6 }}>
+        <input type="checkbox" checked={!state.me!.review_skip} onChange={async e => {
+          await api('me', 'PATCH', { review_skip: !e.target.checked });
+          notify(e.target.checked ? '夕方に振り返りを聞きます' : '振り返りの案内をスキップします');
+          reload();
+        }} />
+        <span className="grow">夕方（18時以降）に開いたとき、振り返りを見るか聞く</span>
+      </label>
 
       <div className="label">この端末以外でも使う（スマホ ⇄ 会社のPC）</div>
       <div className="small muted" style={{ marginBottom: 8 }}>もう1台の端末でこのアプリのURLを開き、「コードでログイン」に下の6桁を入力してください。同じ予定・メモがどちらからでも見えて、入れられます。</div>

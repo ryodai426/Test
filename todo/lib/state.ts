@@ -7,7 +7,7 @@ import { q } from './db';
  */
 const STATE_SQL = `
 WITH me AS (
-  SELECT u.id, u.name, u.tz, s.last_used_at
+  SELECT u.id, u.name, u.tz, u.review_skip, s.last_used_at
     FROM sessions s JOIN users u ON u.id = s.user_id
    WHERE s.token_hash = $1 AND s.last_used_at > now() - interval '180 days'
 ),
@@ -43,10 +43,10 @@ cl AS (
    GROUP BY c.id
 )
 SELECT
-  (SELECT json_build_object('id', id, 'name', name, 'tz', tz, 'last_used_at', last_used_at) FROM me) AS me,
+  (SELECT json_build_object('id', id, 'name', name, 'tz', tz, 'review_skip', review_skip, 'last_used_at', last_used_at) FROM me) AS me,
   COALESCE((SELECT json_agg(g ORDER BY g.is_personal DESC, g.created_at) FROM g), '[]') AS groups,
   COALESCE((SELECT json_agg(t ORDER BY t.sort_date NULLS LAST, t.time NULLS FIRST, t.created_at) FROM t), '[]') AS tasks,
-  COALESCE((SELECT json_agg(json_build_object('task_id', d.task_id, 'occ_date', to_char(d.occ_date, 'YYYY-MM-DD'), 'user_id', d.user_id))
+  COALESCE((SELECT json_agg(json_build_object('task_id', d.task_id, 'occ_date', to_char(d.occ_date, 'YYYY-MM-DD'), 'user_id', d.user_id, 'done_at', d.done_at))
               FROM task_done d WHERE d.task_id IN (SELECT id FROM t) AND d.occ_date >= current_date - 70), '[]') AS done,
   COALESCE((SELECT json_agg(json_build_object('id', i.id, 'task_id', i.task_id, 'label', i.label, 'checked', i.checked, 'position', i.position) ORDER BY i.position, i.label)
               FROM task_items i WHERE i.task_id IN (SELECT id FROM t)), '[]') AS items,

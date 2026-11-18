@@ -197,6 +197,7 @@ route('PATCH', 'me', async ({ body }) => {
     try { new Intl.DateTimeFormat('ja', { timeZone: tz }); } catch { throw bad('タイムゾーンが不正です'); }
     await q('UPDATE users SET tz = $1 WHERE id = $2', [tz, u.id]);
   }
+  if ('review_skip' in body) await q('UPDATE users SET review_skip = $1 WHERE id = $2', [!!body.review_skip, u.id]);
   return { ok: true };
 });
 

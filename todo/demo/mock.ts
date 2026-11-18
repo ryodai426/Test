@@ -57,6 +57,8 @@ const tasks: Any[] = [
   task({ status: 'draft', title: '会議で出たアイデア', description: '朝礼を5分短くする', captured_at: ago(60 * 26), detailed_at: null, reminders: [] }),
   // 終わってから30分以上たったのに、まだ完了していない予定（「完了しましたか？」が出る）
   task({ title: '週報の下書き', date: T, time: hh(H - 2), duration_min: 60 }),
+  task({ title: '朝のメール返信', date: T, time: hh(Math.max(1, H - 4)), duration_min: 60, done_at: new Date(Date.now() - (4 * 60 - 25) * 60000).toISOString(), done_by: 'me' }),
+  task({ group_id: 'gw', assignees: ['me'], starred: true, title: '提案資料の仕上げ', date: T, time: hh(Math.max(0, H - 3)), duration_min: 90, done_at: new Date(Date.now() - (3 * 60 - 40) * 60000).toISOString(), done_by: 'me', captured_at: ago(60 * 5) }),
 ];
 // 過去の分の完了
 const done: Any[] = [];
@@ -66,7 +68,7 @@ const items: Any[] = [
   ...['小麦粉', '卵', '牛乳', '玉ねぎ'].map((label, i) => ({ id: id(), task_id: shop1.id, label, checked: label === '牛乳', position: i })),
   ...['炭', '着火剤', '氷', 'ソーセージ', 'マシュマロ'].map((label, i) => ({ id: id(), task_id: shop2.id, label, checked: false, position: i })),
 ];
-const reactions: Any[] = [];
+const reactions: Any[] = [{ task_id: report.id, occ_date: T, user_id: 'u3', emoji: '👏' }];
 const kinds: Any[] = [
   { id: 'k1', group_id: 'gw', name: '営業訪問' },
   { id: 'k2', group_id: 'gf', name: '通院' },
@@ -85,6 +87,7 @@ const notifications: Any[] = [
 ];
 let nseq = 10;
 let loggedIn = true;
+let reviewSkip = false;
 
 class DemoError extends Error { constructor(public status: number, msg: string) { super(msg); } }
 const fail = (m: string, status = 400): never => { throw new DemoError(status, m); };
@@ -99,7 +102,7 @@ function notifyOthers(groupId: string, kind: string, taskId: string, body: strin
 function setDone(t: Any, day: string | null, isDone: boolean) {
   if (t.repeat) {
     const i = done.findIndex(d => d.task_id === t.id && d.occ_date === day);
-    if (isDone && i < 0) done.push({ task_id: t.id, occ_date: day, user_id: 'me' });
+    if (isDone && i < 0) done.push({ task_id: t.id, occ_date: day, user_id: 'me', done_at: new Date().toISOString() });
     if (!isDone && i >= 0) done.splice(i, 1);
   } else {
     t.done_at = isDone ? new Date().toISOString() : null;
@@ -126,7 +129,7 @@ function state(day: string | null) {
   const ids = new Set(vis.map(t => t.id));
   const d = day || today();
   return {
-    me: { id: 'me', name: users.me, tz: Intl.DateTimeFormat().resolvedOptions().timeZone },
+    me: { id: 'me', name: users.me, tz: Intl.DateTimeFormat().resolvedOptions().timeZone, review_skip: reviewSkip },
     groups: myGroups.map(({ m, ...g }) => ({ ...g, members: m.map((u: string) => ({ id: u, name: users[u] })) })),
     tasks: vis.map(t => ({ ...t })),
     done: done.filter(x => ids.has(x.task_id)).map(x => ({ ...x })),
@@ -152,7 +155,7 @@ async function handle(path: string, method: string, b: Any): Promise<any> {
   if (p === 'auth/link-code') return { code: String(Math.floor(100000 + Math.random() * 899999)), expiresInSec: 600 };
   if (p === 'auth/logout') { loggedIn = false; return { ok: true }; }
   if (p === 'devices') return [{ device: 'iPhone', created_at: ago(9000), last_used_at: ago(3) }, { device: 'Windows PC（会社）', created_at: ago(8000), last_used_at: ago(60) }];
-  if (p === 'me') return { ok: true };
+  if (p === 'me') { if ('review_skip' in b) reviewSkip = !!b.review_skip; return { ok: true }; }
 
   if (p === 'tasks' && M === 'POST') {
     if (b.quick) { const t = task({ status: 'draft', title: (b.title || '').slice(0, 120), description: String(b.description || ''), captured_at: new Date().toISOString(), detailed_at: null, reminders: [] }); tasks.push(t); return { id: t.id }; }

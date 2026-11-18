@@ -85,6 +85,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS task_kinds_name_idx ON task_kinds(group_id, lo
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS kind_id uuid REFERENCES task_kinds(id) ON DELETE SET NULL;
 -- 予定を表示する人（グループの予定）。NULL ＝「共通」（グループの全員）
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignees uuid[];
+-- 夕方の「今日の振り返り」を聞かない設定
+ALTER TABLE users ADD COLUMN IF NOT EXISTS review_skip boolean NOT NULL DEFAULT false;
 -- 星マーク（重要）。月表示などで、時間の長さより優先して出す
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS starred boolean NOT NULL DEFAULT false;
 
