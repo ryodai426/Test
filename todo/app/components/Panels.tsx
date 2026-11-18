@@ -22,9 +22,7 @@ function Sheet({ title, icon, onClose, children, foot, side = true }: { title: s
   );
 }
 
-// ---------------------------------------------------------------- 買い物リスト
-
-// ---------------------------------------------------------------- 持ち物チェックリスト
+// ---------------------------------------------------------------- リスト（持ち物チェックなど）
 
 export function checklistDue(c: Checklist, now = new Date()): boolean {
   if (c.trigger !== 'time' || !c.show_at) return false;
@@ -63,7 +61,7 @@ export function FullChecklist({ list, onClose, reload }: { list: Checklist; onCl
             <span className={'box' + (i.checked ? ' on' : '')}>{i.checked && <Icon name="check" size={18} stroke={2.6} />}</span>{i.label}
           </button>
         ))}
-        {items.length === 0 && <div className="empty" style={{ color: 'var(--ink)' }}>項目がありません。「持ち物」から追加できます。</div>}
+        {items.length === 0 && <div className="empty" style={{ color: 'var(--ink)' }}>項目がありません。「リスト」から追加できます。</div>}
       </div>
       <div className="foot">
         <button className="btn white block big" onClick={onClose}>
@@ -77,7 +75,8 @@ export function FullChecklist({ list, onClose, reload }: { list: Checklist; onCl
 
 function ChecklistEditor({ list, onDone }: { list?: Checklist; onDone: () => void }) {
   const [name, setName] = useState(list?.name || '');
-  const [trigger, setTrigger] = useState<Checklist['trigger']>(list?.trigger || 'time');
+  // 「買い物が終わったら」は買い物リストをなくしたので選べない（前に選んでいたリストは「自分で開く」）
+  const [trigger, setTrigger] = useState<Checklist['trigger']>(list ? (list.trigger === 'after_shopping' ? 'manual' : list.trigger) : 'time');
   const [showAt, setShowAt] = useState(list?.show_at || '07:00');
   const [weekdays, setWeekdays] = useState<number[]>(list?.weekdays || [1, 2, 3, 4, 5]);
   const [items, setItems] = useState<{ id?: string; label: string }[]>(list?.items.map(i => ({ id: i.id, label: i.label })) || [{ label: '' }]);
@@ -101,7 +100,6 @@ function ChecklistEditor({ list, onDone }: { list?: Checklist; onDone: () => voi
       <div className="label">いつ表示する？</div>
       <div className="row wrap">
         <button className={'chip' + (trigger === 'time' ? ' on' : '')} onClick={() => setTrigger('time')}><Emoji char="⏰" size={18} />&nbsp;決まった時間</button>
-        <button className={'chip' + (trigger === 'after_shopping' ? ' on' : '')} onClick={() => setTrigger('after_shopping')}><Emoji char="🛒" size={18} />&nbsp;買い物が終わったら</button>
         <button className={'chip' + (trigger === 'manual' ? ' on' : '')} onClick={() => setTrigger('manual')}>自分で開く</button>
       </div>
       {trigger === 'time' && (
@@ -141,9 +139,9 @@ export function ChecklistPanel({ state, onClose, reload, onOpenFull }: { state: 
   const [editing, setEditing] = useState<string | null>(null);
   const triggerText = (c: Checklist) =>
     c.trigger === 'time' ? `${c.show_at}・${c.weekdays.length === 7 ? '毎日' : [1, 2, 3, 4, 5, 6, 0].filter(w => c.weekdays.includes(w)).map(w => WEEK_LABELS[w]).join('')}`
-      : c.trigger === 'after_shopping' ? '買い物のあと' : '';
+      : '';
   return (
-    <Board label="持ち物チェックリスト" eyebrow="" title="持ち物チェック" onClose={onClose}
+    <Board label="リスト" eyebrow="" title="リスト" onClose={onClose}
       sum={`${state.checklists.length}枚`}>
       <div className="brief-board board-wide">
         {state.checklists.map((c, i) => {

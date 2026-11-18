@@ -241,7 +241,8 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
 
           <div className="label">種類</div>
           <div className="row wrap">
-            {Object.entries(KIND_PRESETS).map(([k, v]) => (
+            {/* 買い物は「リスト」にまとめたので選べない（前に作った買い物の予定だけ表示） */}
+            {Object.entries(KIND_PRESETS).filter(([k]) => k !== 'shopping' || t?.kind === 'shopping').map(([k, v]) => (
               <button key={k} className={'chip' + (!kindId && k === kind ? ' on' : '')} onClick={() => pickKind(k)}><Emoji char={v.icon} size={18} />&nbsp;{v.label}</button>
             ))}
             {groupKinds.map(k => (
