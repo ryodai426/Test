@@ -5,6 +5,7 @@ import { api, ApiError, isDemo, sw, localToday, occurrences, type Checklist, typ
 import Login from './components/Login';
 import Icon, { Logo, Scene } from './components/Icon';
 import Emoji, { EmojiText } from './components/Emoji';
+import TodayBrief from './components/TodayBrief';
 import { DayView, MonthView, WeekView, periodLabel } from './components/Calendar';
 import TaskEditor, { type EditorInit } from './components/TaskEditor';
 import {
@@ -30,6 +31,7 @@ export default function App() {
   const [panel, setPanel] = useState<Panel>(null);
   const [editor, setEditor] = useState<EditorInit | null>(null);
   const [fullList, setFullList] = useState<Checklist | null>(null);
+  const [brief, setBrief] = useState(false);
   const [stickies, setStickies] = useState<Sticky[]>([]);
   const [banner, setBanner] = useState<{ icon: string; title: string; body: string } | null>(null);
   const [toast, setToast] = useState('');
@@ -152,10 +154,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!stickies.length) return;
+    if (!stickies.length || brief) return; // 今日の予定を見ている間は、付箋を勝手に消さない
     const timers = stickies.map(s => setTimeout(() => dismiss(s.key), s.kind === 'done' ? 9000 : 6000));
     return () => timers.forEach(clearTimeout);
-  }, [stickies, dismiss]);
+  }, [stickies, dismiss, brief]);
 
   // ---- 開いている間のリマインド（プッシュが使えない端末でも画面に出す） ------------
   useEffect(() => {
@@ -200,19 +202,36 @@ export default function App() {
     return () => clearInterval(id);
   }, [state === null]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ---- その日はじめて開いたら、今日の予定を付箋で見せる ------------------------------
+  // 端末ごと・人ごとに1日1回（スマホとPCのそれぞれで、その日最初に開いたときに出る）
+  const meId = state?.me?.id;
+  const briefChecked = useRef(false);
+  useEffect(() => {
+    if (!meId) return;
+    const first = !briefChecked.current;
+    briefChecked.current = true;
+    const key = `brief:${meId}`;
+    if (LS.get(key) === today) return;
+    // 通知をタップして開いたときは、目的の画面を優先する（次に開いたときに出す）
+    if (first && (params.get('edit') || params.get('checklist'))) return;
+    LS.set(key, today);
+    setBrief(true);
+  }, [meId, today]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ---- 持ち物チェックリストの自動表示（決まった時間） -------------------------------
   useEffect(() => {
-    if (!state || fullList) return;
+    if (!state || fullList || brief) return;
     const td = localToday();
     const due = state.checklists.find(c => checklistDue(c) && !LS.get(`cl:${c.id}:${td}`) && !c.items.every(i => i.checked));
     if (due) { LS.set(`cl:${due.id}:${td}`, '1'); setFullList(due); }
-  }, [state, fullList]);
+  }, [state, fullList, brief]);
 
   // ---- キーボード操作（会社のPC向け） ---------------------------------------------
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement;
       if (e.metaKey || e.ctrlKey || e.altKey || /INPUT|TEXTAREA|SELECT/.test(el.tagName)) return;
+      if (brief) { setBrief(false); return; } // PC ではどのキーでも閉じる
       if (editor || panel || fullList || banner) { if (e.key === 'Escape') { setEditor(null); setPanel(null); setFullList(null); setBanner(null); } return; }
       const k = e.key.toLowerCase();
       if (k === 'n') { e.preventDefault(); if (window.innerWidth >= 900) sideCaptureRef.current?.focus(); else openCapture(); }
@@ -416,6 +435,7 @@ export default function App() {
       {panel === 'members' && currentGroup && <MembersPanel key={currentGroup.id} state={state} group={currentGroup} onClose={() => setPanel(null)} reload={load} notify={notify} onLeft={() => { setPanel(null); setGroupFilter('all'); load(); }} />}
       {panel === 'settings' && <SettingsPanel state={state} onClose={() => setPanel(null)} notify={notify} />}
       {panel === 'notices' && <NoticePanel state={state} onClose={() => { setPanel(null); load(); }} />}
+      {brief && <TodayBrief state={state} today={today} onClose={() => setBrief(false)} />}
       {fullList && <FullChecklist list={state.checklists.find(c => c.id === fullList.id) || fullList} onClose={() => setFullList(null)} reload={load} />}
 
       {/* ---------- 付箋 ---------- */}
