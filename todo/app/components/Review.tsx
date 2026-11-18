@@ -216,6 +216,18 @@ export function Review({ state, today, onClose, reload }: { state: State; today:
           ))}
         </div>
 
+        <h3 className="review-sec">明日の予定<span>{Number(tm.slice(5, 7))}月{Number(tm.slice(8))}日（{WEEK_LABELS[weekday(tm)]}）</span></h3>
+        <div className="brief-board">
+          {tomorrow.length === 0 && <Note i={2} color="#8ED462"><div className="brief-title">予定なし。のんびりいこう</div></Note>}
+          {tomorrow.map((o, i) => (
+            <Note key={o.task.id} i={i + 2} color={o.color}>
+              <div className="brief-time">{timeRange(o.task)}</div>
+              <div className="brief-title">{o.task.starred && <span className="star-mark">★</span>}{o.task.title}</div>
+              <div className="brief-meta">{o.group && !o.group.is_personal ? o.group.name : '個人'}</div>
+            </Note>
+          ))}
+        </div>
+
         {team.length > 0 && (
           <>
             <h3 className="review-sec">仲間のがんばり</h3>
@@ -247,20 +259,8 @@ export function Review({ state, today, onClose, reload }: { state: State; today:
           })}
         </div>
 
-        <h3 className="review-sec">明日の予定<span>{Number(tm.slice(5, 7))}月{Number(tm.slice(8))}日（{WEEK_LABELS[weekday(tm)]}）</span></h3>
-        <div className="brief-board">
-          {tomorrow.length === 0 && <Note i={2} color="#8ED462"><div className="brief-title">予定なし。のんびりいこう</div></Note>}
-          {tomorrow.map((o, i) => (
-            <Note key={o.task.id} i={i + 2} color={o.color}>
-              <div className="brief-time">{timeRange(o.task)}</div>
-              <div className="brief-title">{o.task.starred && <span className="star-mark">★</span>}{o.task.title}</div>
-              <div className="brief-meta">{o.group && !o.group.is_personal ? o.group.name : '個人'}</div>
-            </Note>
-          ))}
-        </div>
-
         <div className="review-foot">
-          <button className="btn white block big" onClick={onClose}>おやすみなさい<span className="orb"><Icon name="right" size={18} stroke={2.4} /></span></button>
+          <button className="btn white block big" onClick={onClose}>おつかれさまでした！<span className="orb"><Icon name="right" size={18} stroke={2.4} /></span></button>
         </div>
       </div>
       <Scene onGreen />

@@ -401,7 +401,7 @@ export function MonthView(p: Props) {
             </div>
             {list.slice(0, 3).map(o => (
               <span key={o.task.id} className="mtitle" style={{ background: o.color + '4d', textDecoration: o.done ? 'line-through' : undefined, opacity: o.done ? .5 : 1 }}>
-                {o.task.starred && <span className="star-mark">★</span>}{o.task.time ? o.task.time + ' ' : ''}{o.task.title}
+                {o.task.starred && <span className="star-mark">★</span>}{o.task.time && <span className="mt-time">{o.task.time + ' '}</span>}{o.task.title}
               </span>
             ))}
             {list.length > 3 && <span className="mtitle muted">ほか{list.length - 3}件</span>}
