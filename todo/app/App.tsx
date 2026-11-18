@@ -85,6 +85,12 @@ export default function App() {
   const lastDayTap = useRef(0);
   const stateRef = useRef<State | null>(null);
   stateRef.current = state;
+  // アプリ内通知（付箋・時間のリマインドの大きな表示・「完了しましたか？」）のオンオフ。端末ごと
+  const [inApp, setInAppState] = useState(true);
+  const inAppRef = useRef(true);
+  inAppRef.current = inApp;
+  useEffect(() => { setInAppState(LS.get('inapp-notify') !== '0'); }, []);
+  const setInApp = (on: boolean) => { setInAppState(on); LS.set('inapp-notify', on ? '1' : '0'); if (!on) { setStickies([]); setBanner(null); setConfirms([]); } };
 
   const notify = useCallback((m: string) => {
     setToast(m);
@@ -190,11 +196,11 @@ export default function App() {
     if (!container) return;
     const onMsg = (e: MessageEvent) => {
       if (e.data?.type === 'push' && e.data.data?.confirm) {
-        enqueueConfirm(e.data.data.confirm.taskId, e.data.data.confirm.day);
+        if (inAppRef.current) enqueueConfirm(e.data.data.confirm.taskId, e.data.data.confirm.day);
         load();
       } else if (e.data?.type === 'push') {
         const d = e.data.data || {};
-        setBanner({ icon: (d.title || '🔔').split(' ')[0], title: d.title?.split(' ').slice(1).join(' ') || 'お知らせ', body: d.body || '' });
+        if (inAppRef.current) setBanner({ icon: (d.title || '🔔').split(' ')[0], title: d.title?.split(' ').slice(1).join(' ') || 'お知らせ', body: d.body || '' });
         load();
       } else if (e.data?.type === 'open' && stateRef.current) {
         openFromParams(new URL(e.data.url, location.origin).searchParams, stateRef.current);
@@ -210,7 +216,7 @@ export default function App() {
     const fresh = state.notifications.filter(n =>
       !n.read_at && !shownNotices.current.has(n.id) && Date.now() - new Date(n.created_at).getTime() < 86400000);
     fresh.forEach(n => shownNotices.current.add(n.id));
-    if (!fresh.length) return;
+    if (!fresh.length || !inAppRef.current) return; // アプリ内通知がオフなら、お知らせの一覧に残すだけ
     setStickies(xs => [
       ...xs,
       ...fresh.slice(0, 3).reverse().map(n => ({ key: 'n' + n.id, kind: n.kind as Sticky['kind'], body: n.body, taskId: n.task_id, occDate: n.occ_date, noticeId: n.id })),
@@ -253,7 +259,7 @@ export default function App() {
             const key = `fired:${t.id}:${day}:${r.key}`;
             if (r.at > now || r.at < now - 120000 || LS.get(key)) continue;
             LS.set(key, '1');
-            setBanner({ icon: (!t.kind_id && KIND_PRESETS[t.kind]?.icon) || '⏰', title: r.key === '0' ? `${t.title}の時間です！` : t.title, body: reminderMessage(t.title, r.key, t.time) });
+            if (inAppRef.current) setBanner({ icon: (!t.kind_id && KIND_PRESETS[t.kind]?.icon) || '⏰', title: r.key === '0' ? `${t.title}の時間です！` : t.title, body: reminderMessage(t.title, r.key, t.time) });
           }
         }
       }
@@ -265,6 +271,7 @@ export default function App() {
           const key = `fired:draft:${t.id}:${step.min}`;
           if (at > now || at < now - 120000 || LS.get(key)) return;
           LS.set(key, '1');
+          if (!inAppRef.current) return;
           if (i === DRAFT_STEPS.length - 1) setBanner({ icon: '📋', title: 'さっきのメモ', body: step.text(t.title) });
           else setStickies(xs => [...xs, { key: key, kind: 'draft' as const, body: step.text(t.title), taskId: t.id }].slice(-4));
         });
@@ -277,6 +284,7 @@ export default function App() {
       const now = Date.now();
       const td = localToday();
       const doneSet = new Set(s.done.map(d => d.task_id + '|' + d.occ_date));
+      if (!inAppRef.current) return;
       for (const t of s.tasks) {
         if (t.status !== 'ready' || !t.time || t.kind === 'shopping' || !asksMe(t, s) || !occursOn(t, td)) continue;
         if (t.repeat ? doneSet.has(t.id + '|' + td) : t.done_at) continue;
@@ -318,7 +326,7 @@ export default function App() {
 
   // ---- メモがたまっていたら、お昼以降に開いたとき1日1回、付箋でお知らせ ----
   useEffect(() => {
-    if (!state?.me || brief) return;
+    if (!state?.me || brief || !inApp) return;
     const n = state.tasks.filter(t => t.status === 'draft' && t.user_id === state.me!.id).length;
     if (!n || new Date().getHours() < 12) return;
     const key = `memo-digest:${state.me.id}:${localToday()}`;
@@ -523,10 +531,12 @@ export default function App() {
       <main className="main">
         <div className="head">
         <div className="topbar" data-keynav="h">
-          <div className="title"><span className="only-mobile" style={{ display: 'inline-flex' }}><Logo size={30} /></span>{groupTitle}</div>
-          <button className="icon-btn only-mobile" onClick={() => setPanel('notices')} aria-label="お知らせ"><Icon name="bell" />{unread > 0 && <span className="badge">{unread}</span>}</button>
+          <span className="only-mobile" style={{ display: 'inline-flex', flex: 'none' }}><Logo size={30} /></span>
+          <button className="title title-btn" onClick={() => setPanel('groups')} aria-label={`グループを切り替える：${currentGroup ? currentGroup.name : 'すべて表示'}`}>
+            {groupTitle}<span className="title-chev"><Icon name="down" size={18} stroke={2.4} /></span>
+          </button>
           <button className="icon-btn" onClick={() => (currentGroup ? setPanel('members') : setPanel('groups'))} aria-label="メンバー"><Icon name="users" /></button>
-          <button className="icon-btn green only-mobile" onClick={() => setPanel('groups')} aria-label="グループ切り替え"><Icon name="menu" stroke={2.4} /></button>
+          <button className="icon-btn green only-mobile" onClick={() => setPanel('settings')} aria-label="設定"><Icon name="gear" stroke={2.2} /></button>
         </div>
         {sharedGroup && (
           <MemberStrip state={state} group={sharedGroup} who={who} today={today}
@@ -583,7 +593,7 @@ export default function App() {
           <button className="capture-btn" onClick={openCapture} aria-label={drafts.length ? `ひとことメモ・メモ${drafts.length}枚` : 'ひとことメモ'}>
             <span className="i"><Icon name="plus" size={28} stroke={2.6} />{drafts.length > 0 && <span className="badge">{drafts.length}</span>}</span>
           </button>
-          <button onClick={() => setPanel('settings')}><span className="i"><Icon name="gear" /></span>設定</button>
+          <button onClick={() => setPanel('notices')}><span className="i"><Icon name="bell" /></span>通知{unread > 0 && <span className="badge">{unread}</span>}</button>
         </nav>
       </main>
 
@@ -623,7 +633,7 @@ export default function App() {
       {panel === 'members' && currentGroup && <MembersPanel key={currentGroup.id} state={state} group={currentGroup} onClose={() => setPanel(null)} reload={refreshSoon} notify={notify} onLeft={() => { setPanel(null); setGroupFilter('all'); refreshSoon(); }} />}
       {panel === 'settings' && <SettingsPanel state={state} onClose={() => setPanel(null)} notify={notify} reload={refreshSoon}
         onReview={() => { setPanel(null); setReview(true); }} />}
-      {panel === 'notices' && <NoticePanel state={state} onClose={() => { setPanel(null); load(); }}
+      {panel === 'notices' && <NoticePanel state={state} onClose={() => { setPanel(null); load(); }} notify={notify} inApp={inApp} onInApp={setInApp}
         reviewSeen={!reviewUnread} onReview={() => { setPanel(null); setReview(true); }} />}
       {brief && <TodayBrief state={state} today={today} onClose={() => setBrief(false)} />}
       {review && <Review state={state} today={today} onClose={() => setReview(false)} reload={refreshSoon} />}

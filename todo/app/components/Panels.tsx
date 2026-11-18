@@ -349,25 +349,88 @@ export async function currentPushSub(): Promise<PushSubscription | null> {
 export function SettingsPanel({ state, onClose, notify, reload, onReview }: {
   state: State; onClose: () => void; notify: (m: string) => void; reload: () => Promise<void> | void; onReview: () => void;
 }) {
-  const [sub, setSub] = useState<PushSubscription | null>(null);
-  const [perm, setPerm] = useState<string>(typeof Notification !== 'undefined' ? Notification.permission : 'unsupported');
   const [code, setCode] = useState<string | null>(null);
   const [left, setLeft] = useState(0);
   const [devices, setDevices] = useState<{ device: string; last_used_at: string }[]>([]);
-  const standalone = typeof window !== 'undefined' && (window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone);
-  const ios = typeof navigator !== 'undefined' && /iPhone|iPad/.test(navigator.userAgent);
-  const supported = typeof window !== 'undefined' && 'PushManager' in window && !!sw() && !!state.pushKey;
-
-  useEffect(() => { currentPushSub().then(setSub); api('devices').then(setDevices).catch(() => {}); }, []);
+  useEffect(() => { api('devices').then(setDevices).catch(() => {}); }, []);
   useEffect(() => {
     if (!left) return;
     const id = setTimeout(() => setLeft(l => (l <= 1 ? (setCode(null), 0) : l - 1)), 1000);
     return () => clearTimeout(id);
   }, [left]);
 
-  const [pushErr, setPushErr] = useState('');
   const [skippedConfirms, setSkippedConfirms] = useState(false);
   useEffect(() => setSkippedConfirms(hasSkippedConfirms()), []);
+  async function issue() {
+    const r = await api<{ code: string; expiresInSec: number }>('auth/link-code', 'POST');
+    setCode(r.code);
+    setLeft(r.expiresInSec);
+  }
+
+  return (
+    <Sheet title="設定" icon="gear" onClose={onClose}>
+      <div className="label">ログイン中</div>
+      <div><b>{state.me!.name}</b> さん</div>
+
+      <div className="label">今日の振り返り</div>
+      <button className="btn primary block" onClick={onReview}>今日の振り返りを見る</button>
+      <label className="li" style={{ marginTop: 6 }}>
+        <input type="checkbox" checked={!state.me!.review_skip} onChange={async e => {
+          await api('me', 'PATCH', { review_skip: !e.target.checked });
+          notify(e.target.checked ? '夕方に振り返りを聞きます' : '振り返りの案内をスキップします');
+          reload();
+        }} />
+        <span className="grow">17時以降に振り返りを聞く</span>
+      </label>
+
+      <div className="label">ほかの端末で使う</div>
+      <div className="small muted" style={{ marginBottom: 8 }}>ほかの端末の「コードでログイン」に入力</div>
+      {code ? (
+        <>
+          <div className="code-big">{code}</div>
+          <div className="small muted" style={{ textAlign: 'center', marginTop: 6 }}>あと {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}</div>
+        </>
+      ) : <button className="btn primary block" onClick={issue}>6桁のコードを出す</button>}
+      {devices.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          {devices.map((d, i) => <div key={i} className="li small"><span className="grow"><Emoji char="💻" size={18} /> {d.device}</span><span className="muted">{fmtJpDate(localDateOf(d.last_used_at), false)} 最終利用</span></div>)}
+        </div>
+      )}
+
+      <div className="label only-pc">キーボード操作</div>
+      <div className="small muted only-pc" style={{ lineHeight: 2 }}>
+        <kbd>Tab</kbd>/<kbd>Shift</kbd>+<kbd>Tab</kbd> ボタンを移動　<kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> メニューの中で移動　<kbd>Enter</kbd> 押す　<kbd>F6</kbd> エリアを移動　<kbd>Ctrl</kbd>+<kbd>G</kbd> 日付へ移動　<kbd>N</kbd> メモ　<kbd>A</kbd> 予定を追加　<kbd>T</kbd> 今日　<kbd>D</kbd>/<kbd>W</kbd>/<kbd>M</kbd> 日・週・月　<kbd>F1</kbd> 一覧
+      </div>
+
+      {skippedConfirms && (
+        <>
+          <div className="label">削除の確認</div>
+          <button className="btn block" onClick={() => { resetSkippedConfirms(); setSkippedConfirms(false); notify('削除するときに確認します'); }}>削除の確認を表示する</button>
+        </>
+      )}
+
+      <div className="hr" />
+      <button className="btn danger block" onClick={async () => {
+        if (!confirm('この端末からログアウトしますか？')) return;
+        await api('auth/logout', 'POST');
+        try { localStorage.removeItem('state-cache-v1'); } catch { /* なし */ }
+        location.reload();
+      }}>この端末からログアウト</button>
+    </Sheet>
+  );
+}
+
+// ---------------------------------------------------------------- お知らせ履歴
+
+/** 通知の設定：アプリ内通知（開いている間の付箋・大きな表示）と、アプリ外通知（プッシュ通知）のオンオフ。どちらも端末ごと */
+function NotifySettings({ state, notify, inApp, onInApp }: { state: State; notify: (m: string) => void; inApp: boolean; onInApp: (on: boolean) => void }) {
+  const [sub, setSub] = useState<PushSubscription | null>(null);
+  const [perm, setPerm] = useState<string>(typeof Notification !== 'undefined' ? Notification.permission : 'unsupported');
+  const standalone = typeof window !== 'undefined' && (window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone);
+  const ios = typeof navigator !== 'undefined' && /iPhone|iPad/.test(navigator.userAgent);
+  const supported = typeof window !== 'undefined' && 'PushManager' in window && !!sw() && !!state.pushKey;
+  useEffect(() => { currentPushSub().then(setSub); }, []);
+  const [pushErr, setPushErr] = useState('');
   const [pushBusy, setPushBusy] = useState(false);
   async function enablePush() {
     setPushErr('');
@@ -424,89 +487,35 @@ export function SettingsPanel({ state, onClose, notify, reload, onReview }: {
     await sub.unsubscribe();
     setSub(null);
   }
-  async function issue() {
-    const r = await api<{ code: string; expiresInSec: number }>('auth/link-code', 'POST');
-    setCode(r.code);
-    setLeft(r.expiresInSec);
-  }
-
+  const pushNote = !supported
+    ? (!state.pushKey ? 'サーバーの準備中です' : ios && !standalone ? 'ホーム画面に追加して開くと使えます' : 'このブラウザでは使えません')
+    : perm === 'denied' ? (ios ? 'iPhone の「設定」→「通知」→「わすれないYO」で許可してください' : 'ブラウザのサイトの設定で通知を許可してください') : '';
   return (
-    <Sheet title="設定" icon="gear" onClose={onClose}>
-      <div className="label">ログイン中</div>
-      <div><b>{state.me!.name}</b> さん</div>
-
-      <div className="label">今日の振り返り</div>
-      <button className="btn primary block" onClick={onReview}>今日の振り返りを見る</button>
-      <label className="li" style={{ marginTop: 6 }}>
-        <input type="checkbox" checked={!state.me!.review_skip} onChange={async e => {
-          await api('me', 'PATCH', { review_skip: !e.target.checked });
-          notify(e.target.checked ? '夕方に振り返りを聞きます' : '振り返りの案内をスキップします');
-          reload();
-        }} />
-        <span className="grow">17時以降に振り返りを聞く</span>
-      </label>
-
-      <div className="label">ほかの端末で使う</div>
-      <div className="small muted" style={{ marginBottom: 8 }}>ほかの端末の「コードでログイン」に入力</div>
-      {code ? (
-        <>
-          <div className="code-big">{code}</div>
-          <div className="small muted" style={{ textAlign: 'center', marginTop: 6 }}>あと {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}</div>
-        </>
-      ) : <button className="btn primary block" onClick={issue}>6桁のコードを出す</button>}
-      {devices.length > 0 && (
-        <div style={{ marginTop: 10 }}>
-          {devices.map((d, i) => <div key={i} className="li small"><span className="grow"><Emoji char="💻" size={18} /> {d.device}</span><span className="muted">{fmtJpDate(localDateOf(d.last_used_at), false)} 最終利用</span></div>)}
-        </div>
-      )}
-
-      <div className="label">この端末の通知</div>
-      {!supported ? (
-        <div className="small muted">{!state.pushKey ? 'プッシュ通知は準備中です' : ios && !standalone ? 'ホーム画面に追加すると通知を受け取れます' : 'このブラウザは通知に対応していません'}</div>
-      ) : sub ? (
-        <div className="row">
-          <span className="grow small"><Emoji char="🔔" size={18} /> オン</span>
-          <button className="btn small" onClick={testPush}>テスト</button>
-          <button className="btn small" onClick={disablePush}>オフ</button>
-        </div>
-      ) : (
-        <>
-          <button className="btn primary block" onClick={enablePush} disabled={perm === 'denied' || pushBusy}><Emoji char="🔔" size={20} />この端末で通知を受け取る</button>
-          {perm === 'denied' && <div className="small err">{ios ? 'iPhone の「設定」→「通知」→「わすれないYO」で通知を許可してください' : 'ブラウザの設定で通知がブロックされています。サイトの設定から許可してください'}</div>}
-        </>
-      )}
-      {pushErr && <div className="small err" style={{ marginTop: 6, wordBreak: 'break-all' }}>{pushErr}</div>}
-
-      <div className="label">キーボード操作</div>
-      <div className="small muted" style={{ lineHeight: 2 }}>
-        <kbd>Tab</kbd>/<kbd>Shift</kbd>+<kbd>Tab</kbd> ボタンを移動　<kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> メニューの中で移動　<kbd>Enter</kbd> 押す　<kbd>F6</kbd> エリアを移動　<kbd>Ctrl</kbd>+<kbd>G</kbd> 日付へ移動　<kbd>N</kbd> メモ　<kbd>A</kbd> 予定を追加　<kbd>T</kbd> 今日　<kbd>D</kbd>/<kbd>W</kbd>/<kbd>M</kbd> 日・週・月　<kbd>F1</kbd> 一覧
+    <div className="notify-set">
+      <div className="notify-row">
+        <span className="grow"><b>アプリ内通知</b><small>アプリを開いている間の付箋と大きな表示</small></span>
+        <button className={'switch' + (inApp ? ' on' : '')} role="switch" aria-checked={inApp} aria-label="アプリ内通知" onClick={() => onInApp(!inApp)} />
       </div>
-
-      {skippedConfirms && (
-        <>
-          <div className="label">削除の確認</div>
-          <button className="btn block" onClick={() => { resetSkippedConfirms(); setSkippedConfirms(false); notify('削除するときに確認します'); }}>削除の確認を表示する</button>
-        </>
-      )}
-
-      <div className="hr" />
-      <button className="btn danger block" onClick={async () => {
-        if (!confirm('この端末からログアウトしますか？')) return;
-        await api('auth/logout', 'POST');
-        try { localStorage.removeItem('state-cache-v1'); } catch { /* なし */ }
-        location.reload();
-      }}>この端末からログアウト</button>
-    </Sheet>
+      <div className="notify-row">
+        <span className="grow"><b>アプリ外通知</b><small>閉じている間もこの端末に届くプッシュ通知</small></span>
+        {sub && <button className="btn small" onClick={testPush}>テスト</button>}
+        <button className={'switch' + (sub ? ' on' : '')} role="switch" aria-checked={!!sub} aria-label="アプリ外通知"
+          disabled={(!supported || perm === 'denied') && !sub || pushBusy} onClick={() => (sub ? disablePush() : enablePush())} />
+      </div>
+      {pushNote && !sub && <div className="small muted" style={{ marginTop: 4 }}>{pushNote}</div>}
+      {pushErr && <div className="small err" style={{ marginTop: 6, wordBreak: 'break-all' }}>{pushErr}</div>}
+    </div>
   );
 }
 
-// ---------------------------------------------------------------- お知らせ履歴
-
-export function NoticePanel({ state, onClose, onReview, reviewSeen }: { state: State; onClose: () => void; onReview: () => void; reviewSeen: boolean }) {
+export function NoticePanel({ state, onClose, onReview, reviewSeen, notify, inApp, onInApp }: {
+  state: State; onClose: () => void; onReview: () => void; reviewSeen: boolean; notify: (m: string) => void; inApp: boolean; onInApp: (on: boolean) => void;
+}) {
   useEffect(() => { api('notifications/read', 'POST', {}).catch(() => {}); }, []);
   const evening = new Date().getHours() >= 17;
   return (
     <Sheet title="お知らせ" icon="bell" onClose={onClose}>
+      <NotifySettings state={state} notify={notify} inApp={inApp} onInApp={onInApp} />
       {/* 17時から日付が変わるまで、いつでも今日の振り返りを開ける */}
       {evening && (
         <button className={'notice notice-review' + (reviewSeen ? '' : ' unread')} onClick={onReview}>
