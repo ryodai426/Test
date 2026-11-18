@@ -1,8 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { Pool, type PoolClient } from 'pg';
 
 declare global {
   // 開発中のホットリロードで接続が増えないように使い回す
   var __pgPool: Pool | undefined;
+  var __pgReady: Promise<void> | undefined;
 }
 
 function makePool() {
@@ -17,7 +20,34 @@ export function pool(): Pool {
   return globalThis.__pgPool;
 }
 
+/**
+ * 初めて使うときに、表（テーブル）を自動で作る。
+ * schema.sql は何度実行しても安全なので、デプロイ後に手作業で SQL を流す必要はない。
+ */
+function ready(): Promise<void> {
+  if (!globalThis.__pgReady) {
+    globalThis.__pgReady = (async () => {
+      const sql = readFileSync(join(process.cwd(), 'lib', 'schema.sql'), 'utf8');
+      const c = await pool().connect();
+      try {
+        await c.query('BEGIN');
+        await c.query('SELECT pg_advisory_xact_lock(8124301)'); // 同時に複数のサーバーが作ろうとしても1つずつ
+        await c.query(sql);
+        await c.query('COMMIT');
+      } catch (e) {
+        await c.query('ROLLBACK').catch(() => {});
+        globalThis.__pgReady = undefined; // 次の呼び出しでやり直す
+        throw e;
+      } finally {
+        c.release();
+      }
+    })();
+  }
+  return globalThis.__pgReady;
+}
+
 export async function q<T = any>(text: string, params: unknown[] = []): Promise<T[]> {
+  await ready();
   const r = await pool().query(text, params);
   return r.rows as T[];
 }
@@ -28,6 +58,7 @@ export async function one<T = any>(text: string, params: unknown[] = []): Promis
 }
 
 export async function tx<T>(fn: (c: PoolClient) => Promise<T>): Promise<T> {
+  await ready();
   const c = await pool().connect();
   try {
     await c.query('BEGIN');

@@ -9,23 +9,14 @@
 
 このリポジトリのルートには別のアプリ（発明日記）があるので、**Vercel では別プロジェクトとして作り、Root Directory を `todo` にします。**
 
-1. **Neon** でプロジェクトを作り、接続文字列（Pooled connection）をコピー
-2. 手元でスキーマを適用
-   ```bash
-   cd todo
-   npm install
-   DATABASE_URL='postgresql://...' npm run db:migrate
-   ```
-3. プッシュ通知の鍵を作る
-   ```bash
-   npm run vapid   # VAPID_PUBLIC_KEY と VAPID_PRIVATE_KEY が出る
-   ```
-4. **Vercel** で「Add New → Project」→ このリポジトリを選び、**Root Directory = `todo`**
-5. Environment Variables に以下を設定（`.env.example` 参照）
-   - `DATABASE_URL`
+1. **Vercel** で「Add New → Project」→ このリポジトリを選び、**Root Directory = `todo`**
+2. プロジェクトの「Storage」タブから **Neon** を追加（`DATABASE_URL` が自動で入る）
+   - 表（テーブル）は、アプリが初めてデータベースを使うときに自動で作られます。SQL を流す作業は不要です
+3. プッシュ通知の鍵を用意する（`npm run vapid` で出る2つの値。パソコンがなければ、Web の VAPID 鍵生成ツールでも可）
+4. Environment Variables に以下を設定（`.env.example` 参照）
    - `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT`（`mailto:自分のメール`）
    - `CRON_SECRET`（長いランダム文字列）
-6. デプロイ
+5. 環境変数を入れたら Redeploy
 
 ### 時間どおりの通知を動かす（1分ごとの呼び出し）
 
