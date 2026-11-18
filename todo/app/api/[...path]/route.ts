@@ -357,7 +357,8 @@ route('PATCH', 'items/:id', async ({ body, params }) => {
   if ('label' in body) await q('UPDATE task_items SET label = $2 WHERE id = $1', [item.id, str(body.label, 80) || item.label]);
   let completed = false;
   if ('checked' in body) {
-    await q('UPDATE task_items SET checked = $2 WHERE id = $1', [item.id, !!body.checked]);
+    await q('UPDATE task_items SET checked = $2, checked_by = $3, checked_at = CASE WHEN $2 THEN now() ELSE null END WHERE id = $1',
+      [item.id, !!body.checked, body.checked ? u.id : null]);
     const left = await one<{ n: number }>('SELECT count(*) FILTER (WHERE NOT checked)::int AS n FROM task_items WHERE task_id = $1', [t.id]);
     // 全部チェックしたら、買い物タスクは自動で完了
     if (left!.n === 0 && !t.repeat && !t.done_at && t.status === 'ready') {
@@ -368,6 +369,14 @@ route('PATCH', 'items/:id', async ({ body, params }) => {
     }
   }
   return { ok: true, completed };
+});
+
+// チェック済みの品目をまとめて片付ける
+route('POST', 'tasks/:id/items/clear-checked', async ({ params }) => {
+  const u = await requireUser();
+  const t = await requireTask(u.id, params[0]);
+  await q('DELETE FROM task_items WHERE task_id = $1 AND checked', [t.id]);
+  return { ok: true };
 });
 
 route('DELETE', 'items/:id', async ({ params }) => {

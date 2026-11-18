@@ -5,7 +5,7 @@ import Icon from './Icon';
 import Emoji from './Emoji';
 import { api, hhmm, localToday, PALETTE, type State, type Task } from '../lib';
 
-export type EditorInit = { task?: Task; day?: string; time?: string; groupId?: string; kind?: string; occDay?: string; title?: string; assignees?: string[]; detail?: boolean };
+export type EditorInit = { task?: Task; day?: string; time?: string; groupId?: string; kind?: string; occDay?: string; title?: string; assignees?: string[]; detail?: boolean; duration?: number };
 
 const REMINDER_ORDER = ['eve', '60', '30', '10', '5', '0'];
 const WEEKDAYS = [1, 2, 3, 4, 5];
@@ -25,7 +25,7 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
   const [kindName, setKindName] = useState('');
   const [date, setDate] = useState<string>(t ? t.date || (isDraft ? localToday() : '') : init.day || localToday());
   const [time, setTime] = useState<string>(t?.time || init.time || '');
-  const [duration, setDuration] = useState(t?.duration_min || 60);
+  const [duration, setDuration] = useState(t?.duration_min || init.duration || 60);
   const [reminders, setReminders] = useState<string[]>(t && !isDraft ? t.reminders : KIND_PRESETS[init.kind || 'general'].reminders);
   const [remindAll, setRemindAll] = useState(t?.remind_all || false);
   const [starred, setStarred] = useState(!!t?.starred);
@@ -279,7 +279,9 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
             {time && <button className="chip" onClick={() => setTime('')}>時刻なし（終日）</button>}
             {time && (
               <select value={duration} onChange={e => setDuration(Number(e.target.value))} style={{ width: 'auto', padding: '6px 10px' }}>
-                {[15, 30, 45, 60, 90, 120, 180].map(m => <option key={m} value={m}>{m < 60 ? `${m}分` : `${m / 60}時間`}</option>)}
+                {[...new Set([15, 30, 45, 60, 90, 120, 150, 180, 240, 300, 360, 480, duration])].sort((a, b) => a - b).map(m => (
+                  <option key={m} value={m}>{m < 60 ? `${m}分` : m % 60 ? `${Math.floor(m / 60)}時間${m % 60}分` : `${m / 60}時間`}</option>
+                ))}
               </select>
             )}
           </div>
