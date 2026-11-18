@@ -37,7 +37,14 @@ function reloadIfOutdated(serverBuild: string | undefined): boolean {
   if (!serverBuild || !mine || serverBuild === mine || isDemo()) return false;
   const key = 'reloaded-for';
   try { if (sessionStorage.getItem(key) === serverBuild) return false; sessionStorage.setItem(key, serverBuild); } catch { return false; }
-  location.reload();
+  // 保存してあるページを最新にしてから読み込み直す（Service Worker は保存したページをすぐ出すため）
+  (async () => {
+    try {
+      const res = await fetch('/', { cache: 'no-store' });
+      if (res.ok) await (await caches.open('app-v2')).put('/', res);
+    } catch { /* つながらなければ、そのまま読み込み直す */ }
+    location.reload();
+  })();
   return true;
 }
 
