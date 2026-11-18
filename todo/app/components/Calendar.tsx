@@ -3,7 +3,32 @@ import { useEffect, useRef, useState } from 'react';
 import { addDays, parseDate, weekday, WEEK_LABELS, KIND_PRESETS } from '@/lib/time';
 import Emoji from './Emoji';
 import Icon from './Icon';
-import { occurrences, toMin, fromMin, type Occ, type State } from '../lib';
+import { byImportance, followupOf, occurrences, toMin, fromMin, type Occ, type State } from '../lib';
+
+/** 予定の名前（星付きなら★） */
+function Title({ o, icon = true, size = 14 }: { o: Occ; icon?: boolean; size?: number }) {
+  return (
+    <>
+      {o.task.starred && <span className="star-mark" aria-label="星付き">★</span>}
+      {icon && !o.task.kind_id && <><Emoji char={KIND_PRESETS[o.task.kind]?.icon} size={size} />{' '}</>}
+      {o.task.title}
+    </>
+  );
+}
+
+/** タイムスケジュール上の完了ボタン（入力画面を開かずに、その場で完了にする） */
+function DoneButton({ o, onToggle, size = 22 }: { o: Occ; onToggle: (o: Occ) => void; size?: number }) {
+  return (
+    <button className={'ev-check' + (o.done ? ' on' : '')} style={{ width: size, height: size }}
+      aria-label={o.done ? '未完了に戻す' : '完了にする'} title={o.done ? '未完了に戻す' : '完了にする'}
+      onClick={e => { e.stopPropagation(); onToggle(o); }}>
+      <Icon name="check" size={Math.round(size * 0.6)} stroke={2.8} />
+    </button>
+  );
+}
+
+/** 「保留」中かどうか */
+const isHeld = (state: State, o: Occ) => followupOf(state, o.task.id, o.day)?.state === 'held';
 
 type Props = {
   state: State;
@@ -70,9 +95,9 @@ function laneLayout(spans: Span[]) {
   return timed;
 }
 
-function TimedColumn({ day, list, isToday, nowMin, onOpen, onNew, compact }: {
-  day: string; list: Occ[]; isToday: boolean; nowMin: number; compact?: boolean;
-  onOpen: (o: Occ) => void; onNew: (day: string, time?: string) => void;
+function TimedColumn({ day, list, isToday, nowMin, onOpen, onNew, onToggle, compact, state }: {
+  day: string; list: Occ[]; isToday: boolean; nowMin: number; compact?: boolean; state: State;
+  onOpen: (o: Occ) => void; onNew: (day: string, time?: string) => void; onToggle: (o: Occ) => void;
 }) {
   const hourPx = 56;
   return (
@@ -81,16 +106,19 @@ function TimedColumn({ day, list, isToday, nowMin, onOpen, onNew, compact }: {
         <div key={h} className="slot" onClick={() => onNew(day, fromMin(h * 60))} title={`${h}:00 に予定を追加`} />
       ))}
       {layout(list).map(({ o, s, e, lane, lanes }) => (
-        <button key={o.task.id + o.day} className={'ev' + (o.done ? ' done' : '')}
+        <div key={o.task.id + o.day} role="button" tabIndex={0} className={'ev has-check' + (o.done ? ' done' : '') + (compact ? ' compact' : '')}
           style={{
             top: (s / 60) * hourPx + 1, height: Math.max(22, ((e - s) / 60) * hourPx - 2),
             left: `calc(${(lane / lanes) * 100}% + 2px)`, width: `calc(${100 / lanes}% - 4px)`, right: 'auto',
             background: o.color + '4d',
           }}
-          onClick={ev => { ev.stopPropagation(); onOpen(o); }}>
-          <div className="t">{!compact && !o.task.kind_id && <><Emoji char={KIND_PRESETS[o.task.kind]?.icon} size={14} />{' '}</>}{o.task.title}</div>
-          {!compact && <div className="s">{o.task.time}{o.group && !o.group.is_personal ? ` ・${o.group.name}` : ''}</div>}
-        </button>
+          onClick={ev => { ev.stopPropagation(); onOpen(o); }}
+          onKeyDown={ev => { if (ev.key === 'Enter') onOpen(o); }}>
+          <DoneButton o={o} onToggle={onToggle} size={compact ? 18 : 22} />
+          <div className="t"><Title o={o} icon={!compact} /></div>
+          {!compact && <div className="s">{o.task.time}{o.group && !o.group.is_personal ? ` ・${o.group.name}` : ''}{isHeld(state, o) && <span className="held-tag">保留</span>}</div>}
+          {compact && isHeld(state, o) && <span className="held-tag">保留</span>}
+        </div>
       ))}
       {isToday && <div className="nowline" style={{ top: (nowMin / 60) * hourPx }} />}
     </div>
@@ -135,7 +163,7 @@ function AllDayRow({ list, p, sticky = true }: { list: Occ[]; p: Props; sticky?:
           <div key={o.task.id} className="row">
             <button className={'check' + (o.done ? ' on' : '')} onClick={() => p.onToggle(o)} aria-label="完了">{o.done && <Icon name="check" size={13} stroke={2.8} />}</button>
             <button className={'pill' + (o.done ? ' done' : '')} style={{ background: o.color + '4d' }} onClick={() => p.onOpen(o)}>
-              <span className="dot" style={{ background: o.color }} />{!o.task.kind_id && <Emoji char={KIND_PRESETS[o.task.kind]?.icon} size={14} />} {o.task.title}
+              <span className="dot" style={{ background: o.color }} /><Title o={o} />
             </button>
           </div>
         ))}
@@ -163,19 +191,22 @@ function HalfDay({ base, list, p, nowMin }: { base: number; list: Occ[]; p: Prop
             <div key={h} className="slot" onClick={() => p.onNew(p.cursor, fromMin(base + h * 60))} title={`${base / 60 + h}:00 に予定を追加`} />
           ))}
           {layoutRange(list, base, end).map(({ o, s, e, lane, lanes }) => (
-            <button key={o.task.id + o.day} className={'ev ev-half' + (o.done ? ' done' : '')}
+            <div key={o.task.id + o.day} role="button" tabIndex={0} className={'ev ev-half has-check' + (o.done ? ' done' : '')}
               style={{
                 top: `calc(${pct(s)}% + 1px)`, height: `calc(${pct(e) - pct(s)}% - 2px)`,
                 left: `calc(${(lane / lanes) * 100}% + 3px)`, width: `calc(${100 / lanes}% - 6px)`, right: 'auto',
                 background: o.color + '4d',
               }}
-              onClick={ev => { ev.stopPropagation(); p.onOpen(o); }}>
+              onClick={ev => { ev.stopPropagation(); p.onOpen(o); }}
+              onKeyDown={ev => { if (ev.key === 'Enter') p.onOpen(o); }}>
+              <DoneButton o={o} onToggle={p.onToggle} size={20} />
               <div className="t">
                 <span className="s">{s > spanOf(o).s ? '（続き）' : o.task.time}</span>{' '}
-                {!o.task.kind_id && <><Emoji char={KIND_PRESETS[o.task.kind]?.icon} size={14} />{' '}</>}{o.task.title}
+                <Title o={o} />
                 {o.group && !o.group.is_personal && <span className="s">{' '}・{o.group.name}</span>}
+                {isHeld(p.state, o) && <span className="held-tag">保留</span>}
               </div>
-            </button>
+            </div>
           ))}
           {isToday && nowMin >= base && nowMin < end && <div className="nowline" style={{ top: `${pct(nowMin)}%` }} />}
         </div>
@@ -206,7 +237,7 @@ export function DayView(p: Props) {
       <AllDayRow list={list} p={p} />
       <div className="daycols" style={{ gridTemplateColumns: '52px 1fr' }}>
         <div className="timecol">{HOURS.map(h => <div key={h} className="hour">{h ? `${h}:00` : ''}</div>)}</div>
-        <TimedColumn day={p.cursor} list={list} isToday={p.cursor === p.today} nowMin={nowMin} onOpen={p.onOpen} onNew={p.onNew} />
+        <TimedColumn day={p.cursor} list={list} isToday={p.cursor === p.today} nowMin={nowMin} onOpen={p.onOpen} onNew={p.onNew} onToggle={p.onToggle} state={p.state} />
       </div>
     </div>
   );
@@ -254,7 +285,7 @@ export function WeekView(p: Props) {
       <div className="daycols" style={{ gridTemplateColumns: cols }}>
         <div className="timecol">{HOURS.map(h => <div key={h} className="hour">{h ? `${h}` : ''}</div>)}</div>
         {days.map((d, i) => (
-          <TimedColumn key={d} day={d} list={lists[i]} isToday={d === p.today} nowMin={nowMin} onOpen={p.onOpen} onNew={p.onNew} compact />
+          <TimedColumn key={d} day={d} list={lists[i]} isToday={d === p.today} nowMin={nowMin} onOpen={p.onOpen} onNew={p.onNew} onToggle={p.onToggle} state={p.state} compact />
         ))}
       </div>
     </div>
@@ -272,7 +303,8 @@ export function MonthView(p: Props) {
     <div className="month">
       {WEEK_LABELS.map((w, i) => <div key={w} className="wh" style={{ color: i === 0 ? '#dc2626' : i === 6 ? '#2563eb' : undefined }}>{w}</div>)}
       {shown.map(d => {
-        const list = occurrences(p.state, d, p.groupFilter, p.who);
+        // 星付き → 設定した時間が長い順（長いほど重要）に上から3件
+        const list = occurrences(p.state, d, p.groupFilter, p.who).sort(byImportance);
         return (
           <button key={d} className={'mcell' + (d.slice(0, 7) !== month ? ' other' : '') + (d === p.today ? ' today' : '')} onClick={() => p.onPickDay(d)}>
             <span className="n">{Number(d.slice(8))}</span>
@@ -281,7 +313,7 @@ export function MonthView(p: Props) {
             </div>
             {list.slice(0, 3).map(o => (
               <span key={o.task.id} className="mtitle" style={{ background: o.color + '4d', textDecoration: o.done ? 'line-through' : undefined, opacity: o.done ? .5 : 1 }}>
-                {o.task.time ? o.task.time + ' ' : ''}{o.task.title}
+                {o.task.starred && <span className="star-mark">★</span>}{o.task.time ? o.task.time + ' ' : ''}{o.task.title}
               </span>
             ))}
             {list.length > 3 && <span className="mtitle muted">ほか{list.length - 3}件</span>}

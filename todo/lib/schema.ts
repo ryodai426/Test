@@ -85,6 +85,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS task_kinds_name_idx ON task_kinds(group_id, lo
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS kind_id uuid REFERENCES task_kinds(id) ON DELETE SET NULL;
 -- 予定を表示する人（グループの予定）。NULL ＝「共通」（グループの全員）
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignees uuid[];
+-- 星マーク（重要）。月表示などで、時間の長さより優先して出す
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS starred boolean NOT NULL DEFAULT false;
+
+-- 「完了しましたか？」への返事（その日の分ごと）。snoozed ＝ まだ（next_at にもう一度）、held ＝ 保留
+CREATE TABLE IF NOT EXISTS task_followups (
+  task_id      uuid NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  occ_date     date NOT NULL,
+  state        text NOT NULL CHECK (state IN ('snoozed','held')),
+  snooze_count integer NOT NULL DEFAULT 0,
+  next_at      timestamptz,
+  updated_at   timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (task_id, occ_date)
+);
 
 -- 繰り返しタスクの「その日の分」の完了
 CREATE TABLE IF NOT EXISTS task_done (

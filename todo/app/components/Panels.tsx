@@ -20,31 +20,6 @@ function Sheet({ title, icon, onClose, children, foot, side = true }: { title: s
   );
 }
 
-// ---------------------------------------------------------------- 未記入メモ
-
-export function DraftsPanel({ state, onClose, onOpen, reload }: { state: State; onClose: () => void; onOpen: (t: Task) => void; reload: () => void }) {
-  const drafts = state.tasks.filter(t => t.status === 'draft' && t.user_id === state.me!.id)
-    .sort((a, b) => b.captured_at.localeCompare(a.captured_at));
-  return (
-    <Sheet title="未記入のメモ" icon="memo" onClose={onClose}>
-      <div className="small muted" style={{ marginTop: 10 }}><Emoji char="🔒" size={16} /> 自分にしか見えません。押すと詳細を入力できます。</div>
-      {drafts.length === 0 && <div className="empty">未記入のメモはありません <Emoji char="🎉" size={18} /></div>}
-      {drafts.map(t => (
-        <div key={t.id} className="row">
-          <button className="draft grow" onClick={() => onOpen(t)}>
-            <div className="grow">
-              <div className="time">{localDateOf(t.captured_at) === localToday() ? '今日' : fmtJpDate(localDateOf(t.captured_at))} {hhmm(t.captured_at)} に記録</div>
-              <div style={{ marginTop: 2 }}>{t.title || <span className="muted">（ひとことなし）</span>}</div>
-            </div>
-            <span className="muted small">詳細を入力 ›</span>
-          </button>
-          <button className="icon-btn" style={{ marginTop: 10 }} aria-label="削除" onClick={async () => { await api(`tasks/${t.id}`, 'DELETE'); reload(); }}><Icon name="trash" size={19} /></button>
-        </div>
-      ))}
-    </Sheet>
-  );
-}
-
 // ---------------------------------------------------------------- 買い物リスト
 
 export function ShoppingPanel({ state, groupFilter, onClose, reload, onShoppingDone, notify }: {

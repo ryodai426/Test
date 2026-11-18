@@ -25,7 +25,7 @@ g AS (
    GROUP BY g.id
 ),
 t AS (
-  SELECT t.id, t.user_id, t.group_id, t.status, t.title, t.description, t.kind, t.kind_id, t.assignees, t.color,
+  SELECT t.id, t.user_id, t.group_id, t.status, t.title, t.description, t.kind, t.kind_id, t.assignees, t.starred, t.color,
          to_char(t.date, 'YYYY-MM-DD') AS date, t.time, t.duration_min, t.reminders, t.remind_all, t.repeat,
          t.captured_at, t.detailed_at, t.done_at, t.done_by, t.updated_at, t.created_at, t.date AS sort_date
     FROM tasks t
@@ -52,6 +52,8 @@ SELECT
               FROM task_items i WHERE i.task_id IN (SELECT id FROM t)), '[]') AS items,
   COALESCE((SELECT json_agg(json_build_object('task_id', r.task_id, 'occ_date', to_char(r.occ_date, 'YYYY-MM-DD'), 'user_id', r.user_id, 'emoji', r.emoji))
               FROM reactions r WHERE r.task_id IN (SELECT id FROM t) AND r.occ_date >= current_date - 70), '[]') AS reactions,
+  COALESCE((SELECT json_agg(json_build_object('task_id', f.task_id, 'occ_date', to_char(f.occ_date, 'YYYY-MM-DD'), 'state', f.state, 'next_at', f.next_at, 'snooze_count', f.snooze_count))
+              FROM task_followups f WHERE f.task_id IN (SELECT id FROM t) AND f.occ_date >= current_date - 2), '[]') AS followups,
   COALESCE((SELECT json_agg(cl ORDER BY cl.position, cl.created_at) FROM cl), '[]') AS checklists,
   COALESCE((SELECT json_agg(json_build_object('id', k.id, 'group_id', k.group_id, 'name', k.name) ORDER BY k.created_at)
               FROM task_kinds k WHERE k.group_id IN (SELECT group_id FROM my_groups)), '[]') AS kinds,
@@ -64,7 +66,7 @@ SELECT
 export type LoadedState = {
   me: { id: string; name: string; tz: string; last_used_at: string } | null;
   groups: any[]; tasks: any[]; done: any[]; items: any[]; reactions: any[];
-  checklists: any[]; kinds: any[]; notifications: any[];
+  checklists: any[]; kinds: any[]; notifications: any[]; followups: any[];
 };
 
 export async function loadState(tokenHash: string, day: string | null): Promise<LoadedState> {

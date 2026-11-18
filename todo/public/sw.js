@@ -54,13 +54,26 @@ self.addEventListener('push', event => {
       renotify: !!data.tag,
       icon: '/icon-192.png',
       badge: '/icon-192.png',
-      data: { url: data.url || '/' },
+      data: { url: data.url || '/', confirm: data.confirm || null },
+      // 「完了しましたか？」には、その場で答えられるボタン（対応している端末だけ。iPhone は通知を押すとアプリで聞く）
+      actions: data.confirm ? [
+        { action: 'done', title: '完了' },
+        { action: 'later', title: 'まだ（15分後）' },
+        { action: 'hold', title: '保留' },
+      ] : [],
     });
   })());
 });
 
 self.addEventListener('notificationclick', event => {
   event.notification.close();
+  const c = event.notification.data && event.notification.data.confirm;
+  if (c && ['done', 'later', 'hold'].includes(event.action)) {
+    const path = event.action === 'done' ? `/api/tasks/${c.taskId}/done` : `/api/tasks/${c.taskId}/followup`;
+    const body = event.action === 'done' ? { day: c.day, done: true } : { day: c.day, action: event.action };
+    event.waitUntil(fetch(path, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {}));
+    return;
+  }
   const url = (event.notification.data && event.notification.data.url) || '/';
   event.waitUntil((async () => {
     const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });

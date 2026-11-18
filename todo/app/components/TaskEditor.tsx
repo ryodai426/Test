@@ -5,7 +5,7 @@ import Icon from './Icon';
 import Emoji from './Emoji';
 import { api, hhmm, localToday, PALETTE, type State, type Task } from '../lib';
 
-export type EditorInit = { task?: Task; day?: string; time?: string; groupId?: string; kind?: string; occDay?: string; title?: string; assignees?: string[] };
+export type EditorInit = { task?: Task; day?: string; time?: string; groupId?: string; kind?: string; occDay?: string; title?: string; assignees?: string[]; detail?: boolean };
 
 const REMINDER_ORDER = ['eve', '60', '30', '10', '5', '0'];
 const WEEKDAYS = [1, 2, 3, 4, 5];
@@ -28,6 +28,10 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
   const [duration, setDuration] = useState(t?.duration_min || 60);
   const [reminders, setReminders] = useState<string[]>(t && !isDraft ? t.reminders : KIND_PRESETS[init.kind || 'general'].reminders);
   const [remindAll, setRemindAll] = useState(t?.remind_all || false);
+  const [starred, setStarred] = useState(!!t?.starred);
+  // メモは「ひとこと」と「詳細」だけ。「詳細に記録する」にチェックしたときだけ、ふつうの入力欄を出す
+  const [detailMode, setDetailMode] = useState(!!init.detail);
+  const memoMode = isDraft && !detailMode;
   const meId = state.me!.id;
   // 表示する人：null ＝ 共通（全員）。新しく入れる予定は「自分だけ」から
   const [assignees, setAssignees] = useState<string[] | null>(t ? (t.assignees ?? null) : (init.assignees ?? [meId]));
@@ -42,7 +46,6 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
   const groupColor = group?.color || '#6B7280';
   const items = t ? state.items.filter(i => i.task_id === t.id) : [];
   const occDay = init.occDay || t?.date || localToday();
-  const done = t ? (t.repeat ? state.done.some(d => d.task_id === t.id && d.occ_date === occDay) : !!t.done_at) : false;
 
   const groupKinds = (state.kinds || []).filter(k => k.group_id === groupId);
 
@@ -91,9 +94,18 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
 
   async function save() {
     setErr('');
-    if (!title.trim()) { setErr('タイトルを入力してください'); return; }
+    if (!memoMode && !title.trim()) { setErr('タイトルを入力してください'); return; }
     setBusy(true);
+    if (memoMode) {
+      // メモのまま保存（ひとこと・詳細だけ）
+      try {
+        await api(`tasks/${t!.id}`, 'PATCH', { title, description });
+        onSaved('メモを保存しました');
+      } catch (e: any) { setErr(e.message); setBusy(false); }
+      return;
+    }
     const body = {
+      starred,
       group_id: groupId, title, description, kind, kind_id: kindId, color, date: date || null, time: date && time ? time : null,
       duration_min: duration, reminders: time ? reminders : [], remind_all: assignees === null && remindAll,
       ...(group && !group.is_personal ? { assignees: assignees === null ? 'all' : assignees } : {}),
@@ -118,11 +130,6 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
     onSaved('削除しました');
   }
 
-  async function toggleDone() {
-    if (!t) return;
-    await api(`tasks/${t.id}/done`, 'POST', { day: occDay, done: !done });
-    onSaved(done ? '未完了に戻しました' : '完了！おつかれさまです');
-  }
 
   async function addItem() {
     const labels = itemText.split(/[、,\n]/).map(s => s.trim()).filter(Boolean);
@@ -155,14 +162,35 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
     <div className="overlay" onClick={onClose}>
       <div className="sheet" onClick={e => e.stopPropagation()}>
         <div className="sheet-head">
-          <h3>{isDraft ? '未記入のメモ' : t ? '予定・タスク' : '新しい予定・タスク'}</h3>
+          <h3>{memoMode ? 'メモ' : isDraft ? 'メモを予定にする' : t ? '予定・タスク' : '新しい予定・タスク'}</h3>
+          {!memoMode && (
+            <button className={'star-btn' + (starred ? ' on' : '')} onClick={() => setStarred(v => !v)} aria-pressed={starred}
+              aria-label={starred ? '星を外す' : '星を付ける（重要）'} title={starred ? '星を外す' : '星を付ける（重要）'}>
+              {starred ? '★' : '☆'}
+            </button>
+          )}
           <button className="icon-btn" onClick={onClose} aria-label="閉じる"><Icon name="close" size={20} /></button>
         </div>
         <div className="sheet-body">
+          {isDraft && <div className="small muted" style={{ marginTop: 2 }}>{hhmm(t!.captured_at)} にメモしました</div>}
+
+          {memoMode ? (
+            <>
+              <div className="label">ひとこと</div>
+              <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="例：田中さんに電話" maxLength={120} />
+              <div className="label">詳細</div>
+              <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="思い出せるように、少しだけ書いておく" rows={4} />
+              <label className="detail-toggle">
+                <input type="checkbox" checked={detailMode} onChange={e => setDetailMode(e.target.checked)} />
+                <span>詳細に記録する<small>日時・グループ・通知などを入れて、カレンダーの予定にします</small></span>
+              </label>
+            </>
+          ) : (<>
           {isDraft && (
-            <div className="card" style={{ background: '#FFF6D6', borderColor: '#F2D98A' }}>
-              <div className="small"><b>{hhmm(t!.captured_at)}</b> にメモしました。いつやるかを決めて保存すると、カレンダーに入ります。</div>
-            </div>
+            <label className="detail-toggle">
+              <input type="checkbox" checked={detailMode} onChange={e => setDetailMode(e.target.checked)} />
+              <span>詳細に記録する<small>外すと、メモ（ひとこと・詳細だけ）に戻ります</small></span>
+            </label>
           )}
 
           <div className="label">タイトル</div>
@@ -327,11 +355,12 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
           </div>
           <div className="small muted" style={{ marginTop: 6 }}>何も選ばなければグループの色になります</div>
 
+          </>)}
+
           {err && <div className="err">{err}</div>}
         </div>
         <div className="sheet-foot">
           {t && <button className="btn danger" onClick={remove}>削除</button>}
-          {t && !isDraft && <button className="btn" onClick={toggleDone}>{done ? '未完了に戻す' : '✓ 完了'}</button>}
           <div className="grow" />
           <button className="btn" onClick={onClose}>キャンセル</button>
           <button className="btn primary" onClick={save} disabled={busy}>保存</button>

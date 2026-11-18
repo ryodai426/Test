@@ -101,6 +101,7 @@ function cleanTask(b: any, partial: boolean) {
   if (has('duration_min')) out.duration_min = Math.min(24 * 60, Math.max(5, Number(b.duration_min) || 60));
   if (has('reminders')) out.reminders = Array.isArray(b.reminders) ? [...new Set(b.reminders.map(String))].filter(r => REMINDERS.includes(r as string)) : [];
   if (has('remind_all')) out.remind_all = !!b.remind_all;
+  if (has('starred')) out.starred = !!b.starred;
   if (has('repeat')) {
     const r = b.repeat;
     if (r && ['daily', 'weekly', 'monthly'].includes(r.freq)) {
@@ -219,8 +220,8 @@ route('POST', 'tasks', async ({ body }) => {
   const u = await requireUser();
   // ワンボタンメモ：ひとことだけ（空でもOK）で、自分専用の未記入メモにする
   if (body.quick) {
-    const t = await one('INSERT INTO tasks (user_id, group_id, status, title, reminders) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-      [u.id, await personalGroupId(u.id), 'draft', str(body.title, 120), '{}']);
+    const t = await one('INSERT INTO tasks (user_id, group_id, status, title, description, reminders) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+      [u.id, await personalGroupId(u.id), 'draft', str(body.title, 120), str(body.description, 2000), '{}']);
     return t;
   }
   const groupId = body.group_id ? String(body.group_id) : await personalGroupId(u.id);
@@ -231,9 +232,9 @@ route('POST', 'tasks', async ({ body }) => {
   // 表示する人：指定がなければ「自分だけ」（共通にするときは 'all'）
   const assignees = await cleanAssignees(groupId, g.is_personal, 'assignees' in body ? body.assignees : [u.id], u.id);
   const t = await one<{ id: string }>(
-    `INSERT INTO tasks (user_id, group_id, status, title, description, kind, kind_id, assignees, color, date, time, duration_min, reminders, remind_all, repeat, detailed_at)
-     VALUES ($1,$2,'ready',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, now()) RETURNING id`,
-    [u.id, groupId, f.title, f.description, kindId ? 'general' : f.kind, kindId, assignees, f.color, f.date, f.time, f.duration_min, f.reminders, f.remind_all, f.repeat]);
+    `INSERT INTO tasks (user_id, group_id, status, title, description, kind, kind_id, assignees, color, date, time, duration_min, reminders, remind_all, repeat, starred, detailed_at)
+     VALUES ($1,$2,'ready',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, now()) RETURNING id`,
+    [u.id, groupId, f.title, f.description, kindId ? 'general' : f.kind, kindId, assignees, f.color, f.date, f.time, f.duration_min, f.reminders, f.remind_all, f.repeat, f.starred]);
   if (Array.isArray(body.items)) {
     for (const [i, label] of body.items.map((s: unknown) => str(s, 80)).filter(Boolean).entries()) {
       await q('INSERT INTO task_items (task_id, label, position) VALUES ($1,$2,$3)', [t!.id, label, i]);
@@ -312,6 +313,24 @@ route('POST', 'tasks/:id/done', async ({ body, params }) => {
   const u = await requireUser();
   const t = await requireTask(u.id, params[0]);
   await setDone(u, t, body.day ?? null, body.done !== false);
+  return { ok: true };
+});
+
+// 「完了しましたか？」への返事：later ＝ まだ（15分後にもう一度）、hold ＝ 保留（もう聞かない）、clear ＝ 取り消し
+route('POST', 'tasks/:id/followup', async ({ body, params }) => {
+  const u = await requireUser();
+  const t = await requireTask(u.id, params[0]);
+  const day = DATE.test(body.day || '') ? body.day : nowIn(u.tz).date;
+  if (body.action === 'later') {
+    await q(`INSERT INTO task_followups (task_id, occ_date, state, snooze_count, next_at) VALUES ($1, $2, 'snoozed', 1, now() + interval '15 minutes')
+             ON CONFLICT (task_id, occ_date) DO UPDATE SET state = 'snoozed', snooze_count = task_followups.snooze_count + 1,
+               next_at = now() + interval '15 minutes', updated_at = now()`, [t.id, day]);
+  } else if (body.action === 'hold') {
+    await q(`INSERT INTO task_followups (task_id, occ_date, state, next_at) VALUES ($1, $2, 'held', null)
+             ON CONFLICT (task_id, occ_date) DO UPDATE SET state = 'held', next_at = null, updated_at = now()`, [t.id, day]);
+  } else if (body.action === 'clear') {
+    await q('DELETE FROM task_followups WHERE task_id = $1 AND occ_date = $2', [t.id, day]);
+  } else throw bad('返事の種類が不正です');
   return { ok: true };
 });
 
