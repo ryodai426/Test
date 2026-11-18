@@ -5,7 +5,7 @@ import { addDays, daysBetween, KIND_PRESETS, REMINDER_CHOICES, REMINDER_LABELS, 
 import Icon from './Icon';
 import Emoji from './Emoji';
 import { act, draftTask, P } from '../store';
-import { api, hhmm, localToday, PALETTE, type State, type Task } from '../lib';
+import { api, COMMON_COLOR, hhmm, localToday, memberColor, type State, type Task } from '../lib';
 
 export type EditorInit = { task?: Task; day?: string; time?: string; groupId?: string; kind?: string; occDay?: string; title?: string; assignees?: string[]; detail?: boolean; duration?: number };
 
@@ -50,7 +50,7 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
   const meId = state.me!.id;
   // 表示する人：null ＝ 共通（全員）。新しく入れる予定は「自分だけ」から
   const [assignees, setAssignees] = useState<string[] | null>(t ? (t.assignees ?? null) : (init.assignees ?? [meId]));
-  const [color, setColor] = useState<string | null>(t?.color || null);
+  const color = null; // 色は表示する人で決まる（lib.ts の taskColor）
   const [repeat, setRepeat] = useState<Repeat | null>(t?.repeat || null);
   // 曜日ボタンは「毎週」を選んだときだけ出す
   const [weeklyOpen, setWeeklyOpen] = useState(() => {
@@ -65,7 +65,6 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
   const [busy, setBusy] = useState(false);
 
   const group = state.groups.find(g => g.id === groupId);
-  const groupColor = group?.color || '#6B7280';
   const items = t ? state.items.filter(i => i.task_id === t.id) : [];
   const occDay = init.occDay || t?.date || localToday();
 
@@ -364,7 +363,7 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
             <>
               <div className="label">表示する人</div>
               <div className="row wrap">
-                <button className={'chip' + (assignees === null ? ' on' : '')} onClick={() => setAssignees(null)}>共通</button>
+                <button className={'chip' + (assignees === null ? ' on' : '')} onClick={() => setAssignees(null)}><span className="dot" style={{ background: COMMON_COLOR, marginRight: 6 }} />共通</button>
                 {[...group.members].sort((a, b) => (a.id === meId ? -1 : b.id === meId ? 1 : 0)).map(m => {
                   const on = !!assignees?.includes(m.id);
                   return (
@@ -372,7 +371,7 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
                       if (assignees === null) { setAssignees([m.id]); return; }
                       if (on && assignees.length === 1) return; // 誰もいなくはできない
                       setAssignees(on ? assignees.filter(x => x !== m.id) : [...assignees, m.id]);
-                    }}>{m.id === meId ? '自分' : m.name}</button>
+                    }}><span className="dot" style={{ background: memberColor(group, m.id), marginRight: 6 }} />{m.id === meId ? '自分' : m.name}</button>
                   );
                 })}
               </div>
@@ -423,13 +422,6 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
           <div className="label">詳細</div>
           <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} />
 
-          <div className="label">色</div>
-          <div className="row wrap" style={{ gap: 10 }}>
-            <button className={'swatch' + (!color ? ' on' : '')} style={{ background: groupColor }} title="グループの色" onClick={() => setColor(null)} />
-            {PALETTE.filter(c => c !== groupColor).slice(0, 6).map(c => (
-              <button key={c} className={'swatch' + (color === c ? ' on' : '')} style={{ background: c }} onClick={() => setColor(c)} />
-            ))}
-          </div>
           </div>
 
           </div>

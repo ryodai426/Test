@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { addDays, DRAFT_STEPS, occursOn, reminderMessage, reminderTimes, KIND_PRESETS } from '@/lib/time';
-import { api, ApiError, asksMe, followupOf, isDemo, isFor, sw, localToday, occurrences, type Checklist, type Occ, type State, type Task } from './lib';
+import { api, ApiError, asksMe, followupOf, isDemo, isFor, sw, localToday, occurrences, taskColor, type Checklist, type Occ, type State, type Task } from './lib';
 import Login from './components/Login';
 import Icon, { Logo, Scene } from './components/Icon';
 import Emoji, { EmojiText } from './components/Emoji';
@@ -534,7 +534,7 @@ export default function App() {
             <div className="side-section">いつかやる</div>
             {someday.map(t => (
               <button key={t.id} className="side-link" onClick={() => setEditor({ task: t })}>
-                <span className="dot" style={{ background: t.color || state.groups.find(g => g.id === t.group_id)?.color }} />{t.title}
+                <span className="dot" style={{ background: taskColor(t, state) }} />{t.title}
               </button>
             ))}
           </>
@@ -600,7 +600,7 @@ export default function App() {
               <div className="todo-list" style={{ padding: '6px 0 0' }}>
                 {someday.map(t => (
                   <button key={t.id} className="todo" onClick={() => setEditor({ task: t })}>
-                    <span className="dot" style={{ background: t.color || state.groups.find(g => g.id === t.group_id)?.color }} />
+                    <span className="dot" style={{ background: taskColor(t, state) }} />
                     <span className="grow">{t.title}</span>
                   </button>
                 ))}

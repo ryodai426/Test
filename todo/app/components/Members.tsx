@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { occurrences, toMin, type Group, type State } from '../lib';
+import { memberColor, occurrences, toMin, type Group, type State } from '../lib';
 import Icon from './Icon';
 
 // アイコンの色（文字が読める明るい色だけ）
@@ -12,9 +12,9 @@ export function avatarColor(id: string) {
   return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
 }
 
-export function Avatar({ id, name, size = 40 }: { id: string; name: string; size?: number }) {
+export function Avatar({ id, name, size = 40, color }: { id: string; name: string; size?: number; color?: string }) {
   return (
-    <span className="avatar" style={{ width: size, height: size, background: avatarColor(id), fontSize: size * 0.42 }} aria-hidden="true">
+    <span className="avatar" style={{ width: size, height: size, background: color || avatarColor(id), fontSize: size * 0.42 }} aria-hidden="true">
       {[...name.trim()][0] || '?'}
     </span>
   );
@@ -65,7 +65,7 @@ export default function MemberDots({ state, group, who, today, onPick }: {
         return (
           <button key={m.id} role="tab" aria-selected={on} className={'mdot' + (on ? ' on' : '')} onClick={() => onPick(m.id)}
             aria-label={`${name}・${word[st.kind]}`} title={name}>
-            <Avatar id={m.id} name={m.name} size={32} />
+            <Avatar id={m.id} name={m.name} size={32} color={memberColor(group, m.id)} />
             <span className={'member-dot ' + st.kind} />
           </button>
         );
@@ -91,7 +91,7 @@ export function MemberMenu({ state, group, who, today, onPick }: {
     <>
       <button className="mdot mmenu-btn" onClick={() => setOpen(true)} aria-haspopup="dialog" aria-expanded={open}
         aria-label={`メンバーと仕事の状況：${cur.id === me ? '自分' : cur.name}`}>
-        <Avatar id={cur.id} name={cur.name} size={34} />
+        <Avatar id={cur.id} name={cur.name} size={34} color={memberColor(group, cur.id)} />
         <span className={'member-dot ' + st.kind} />
       </button>
       {open && (
@@ -102,7 +102,7 @@ export function MemberMenu({ state, group, who, today, onPick }: {
               const s = statusOf(state, group, m.id, today, now);
               return (
                 <button key={m.id} className={'mmenu-row' + (m.id === who ? ' on' : '')} onClick={() => { setOpen(false); onPick(m.id); }}>
-                  <span className="mmenu-av"><Avatar id={m.id} name={m.name} size={38} /><span className={'member-dot ' + s.kind} /></span>
+                  <span className="mmenu-av"><Avatar id={m.id} name={m.name} size={38} color={memberColor(group, m.id)} /><span className={'member-dot ' + s.kind} /></span>
                   <span className="grow"><b>{m.id === me ? '自分' : m.name}</b><span className={'mmenu-st ' + s.kind}>{s.text}</span></span>
                 </button>
               );
@@ -134,7 +134,7 @@ export function MemberFocus({ state, group, who, today, onOpenTask, onClose }: {
   return (
     <div className="member-focus">
       <div className="mf-head">
-        <Avatar id={m.id} name={m.name} size={34} />
+        <Avatar id={m.id} name={m.name} size={34} color={memberColor(group, m.id)} />
         <div className="grow"><b>{m.name}さん</b><span className="mf-progress">今日 {done}/{list.length} 完了</span></div>
         <div className="mf-bar" aria-hidden="true"><span style={{ width: `${list.length ? (done / list.length) * 100 : 0}%` }} /></div>
         <button className="icon-btn mf-close" onClick={onClose} aria-label="自分の予定に戻る"><Icon name="close" size={18} /></button>
