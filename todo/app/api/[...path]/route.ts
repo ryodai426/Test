@@ -147,10 +147,10 @@ route('POST', 'auth/register', async ({ req, body }) => {
       `INSERT INTO groups (name, color, is_personal, owner_id, notify_create, notify_done)
        VALUES ('個人（自分専用）', '#F5E211', true, $1, false, false) RETURNING id`, [u.id])).rows[0];
     await c.query('INSERT INTO memberships (group_id, user_id) VALUES ($1, $2)', [g.id, u.id]);
-    // よく使う持ち物チェックリストを最初から用意しておく（テンプレート）
+    // よく使うリストを最初から用意しておく（テンプレート）
     const seeds: [string, string, string | null, string[]][] = [
       ['家を出る時', 'time', '07:00', ['財布', 'スマホ', '鍵', '社員証', '傘（天気を確認）', 'ゴミ']],
-      ['お店を出る時', 'after_shopping', null, ['傘', '買った物', 'レシート']],
+      ['お店を出る時', 'manual', null, ['傘', '買った物', 'レシート']],
     ];
     for (const [i, [n, trig, at, items]] of seeds.entries()) {
       const cl = (await c.query('INSERT INTO checklists (user_id, name, trigger, show_at, position) VALUES ($1,$2,$3,$4,$5) RETURNING id', [u.id, n, trig, at, i])).rows[0];

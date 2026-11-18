@@ -120,12 +120,14 @@ kbd { font-family: var(--display); font-size: 11.5px; font-weight: var(--w-base)
 .content { flex: 1; overflow: auto; position: relative; -webkit-overflow-scrolling: touch; background: var(--card); margin: 0 10px; border-radius: var(--radius) var(--radius) 0 0; }
 
 /* スマホ下部：白いカード */
-.bottombar { display: grid; grid-template-columns: repeat(5, 1fr); align-items: end; margin: 0 10px; padding: 6px 4px calc(8px + var(--safe-b)); background: var(--card); border-top: 1.5px solid var(--line-soft); }
+.bottombar { display: grid; grid-template-columns: repeat(3, 1fr); align-items: end; margin: 0 10px; padding: 6px 4px calc(8px + var(--safe-b)); background: var(--card); border-top: 1.5px solid var(--line-soft); }
 .bottombar > button { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 11px; font-weight: var(--w-base); color: var(--sub); padding: 4px 0; position: relative; }
 .bottombar > button:hover { color: var(--ink); }
 .bottombar .capture-btn { color: var(--ink); }
 .bottombar .capture-btn .i { width: 58px; height: 58px; border-radius: 50%; background: var(--green); color: var(--ink); display: flex; align-items: center; justify-content: center; margin-top: -26px; box-shadow: 0 0 0 5px var(--card), 0 10px 20px rgba(44, 46, 42, .18); }
 .bottombar .badge { top: -3px; right: calc(50% - 22px); }
+.bottombar .capture-btn .i { position: relative; }
+.bottombar .capture-btn .badge { top: -2px; right: -2px; }
 
 @media (min-width: 900px) {
   .shell { grid-template-columns: 300px 1fr; }
@@ -239,7 +241,7 @@ kbd { font-family: var(--display); font-size: 11.5px; font-weight: var(--w-base)
 /* ---- ワンボタンメモ（スマホ） ---- */
 .capture-sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; background: var(--yellow); border-radius: 28px 28px 0 0; padding: 20px 16px calc(16px + var(--safe-b)); box-shadow: 0 -10px 30px rgba(44, 46, 42, .15); transform: translateY(110%); transition: transform .22s cubic-bezier(.2, .9, .3, 1.1); }
 .capture-sheet.open { transform: none; }
-.capture-sheet .cap-title { font-size: 21px; font-weight: var(--w-head); letter-spacing: -.02em; margin-bottom: 10px; }
+.capture-sheet .cap-title { font-size: 21px; font-weight: var(--w-head); letter-spacing: -.02em; margin-bottom: 10px; word-break: keep-all; overflow-wrap: anywhere; }
 .capture-sheet input { border-color: transparent; }
 .capture-sheet .btn:not(.primary) { background: rgba(255, 255, 255, .6); }
 .capture-backdrop { position: fixed; inset: 0; z-index: 59; background: rgba(44, 46, 42, .3); }
@@ -480,28 +482,6 @@ b, strong { font-weight: var(--w-head); }
 .notice-review.unread b::after { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #E5322D; margin-left: 6px; vertical-align: 2px; }
 .sticky.memos { background: var(--card); box-shadow: 0 12px 26px rgba(44, 46, 42, .16), inset 0 0 0 2.5px #E5322D; }
 
-/* ---- 買い物リスト ---- */
-.shop-card h4 { font-size: 17px; }
-.shop-tools { margin: 10px 0 4px; }
-.shop-aisle { margin-top: 8px; }
-.shop-aisle-name { font-size: 11.5px; color: var(--sub); padding: 6px 2px 2px; border-bottom: 1.5px solid rgba(44, 46, 42, .08); }
-.shop-card .li { cursor: pointer; }
-.qty { display: inline-block; margin-left: 8px; padding: 0 7px; border-radius: 8px; background: var(--card); font-size: 12px; color: var(--ink); vertical-align: 1px; }
-.checked-by { display: inline-block; margin-left: 8px; font-size: 11px; color: var(--sub); }
-.shop-done-toggle { margin-top: 8px; font-size: 12.5px; color: var(--sub); padding: 4px 2px; }
-.shop-suggest { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
-.shop-suggest .chip { padding: 5px 10px; font-size: 13px; border-color: transparent; }
-.shop-mode .items { gap: 0; }
-.shop-mode .shop-aisle-name { color: var(--ink); border-color: rgba(44, 46, 42, .15); margin-top: 10px; font-size: 13px; }
-.shop-big { display: flex; align-items: center; gap: 14px; padding: 15px 16px; border-radius: 18px; background: var(--card); font-size: 18px; margin-top: 8px; cursor: pointer; transition: transform .12s, opacity .15s; }
-.shop-big:active { transform: scale(.98); }
-.shop-big.on { opacity: .55; }
-.shop-big.on .grow { text-decoration: line-through; }
-.shop-big .box { width: 30px; height: 30px; border-radius: 50%; }
-.shop-add { display: flex; gap: 8px; }
-.shop-add input { border-color: transparent; }
-.shop-mode { padding-bottom: calc(16px + var(--safe-b)); }
-.shop-mode .foot { padding-bottom: 0; }
 
 /* ---- 付箋のボード（買い物リスト・持ち物チェック） ---- */
 .board { cursor: default; }
@@ -515,8 +495,6 @@ b, strong { font-weight: var(--w-head); }
 .board-note .btn:not(.primary):not(.danger):hover { background: #fff; }
 .board-note .chip { border-color: transparent; }
 .board-note .chip.on { background: var(--green); }
-.board-note .shop-aisle-name { border-color: rgba(44, 46, 42, .12); }
-.board-note .qty { background: rgba(255, 255, 255, .85); }
 .board-note.is-done { opacity: .7; }
 .note-title { margin: 0; font-size: 18px; font-weight: var(--w-head); }
 .note-count { font-size: 13px; background: rgba(255, 255, 255, .75); border-radius: 999px; padding: 1px 10px; }
@@ -527,8 +505,6 @@ b, strong { font-weight: var(--w-head); }
 .note-add-btn { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; text-align: left; font-size: 17px; font-weight: var(--w-head); padding: 18px 2px; width: 100%; }
 .note-add-btn span { font-size: 12.5px; color: var(--sub); font-weight: var(--w-base); }
 .note-editor .label { color: var(--ink); opacity: .75; }
-.shop-card h4 { font-size: 18px; }
-.fullcheck.shop-mode { z-index: 95; }
 .board-note h4 { margin: 0; }
 .board .scene { max-height: 14vh; }
 @media (max-width: 899px) { .board .scene { max-height: 9vh; } }

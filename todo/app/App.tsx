@@ -9,7 +9,6 @@ import TodayBrief from './components/TodayBrief';
 import { act, bindStore, changedSince, draftTask, isTmp, P } from './store';
 import MemberStrip, { MemberFocus } from './components/Members';
 import { Review, ReviewPrompt } from './components/Review';
-import { ShoppingPanel } from './components/Shopping';
 import MemoBoard from './components/MemoBoard';
 import { DayView, MonthView, WeekView, periodLabel } from './components/Calendar';
 import TaskEditor, { type EditorInit } from './components/TaskEditor';
@@ -18,7 +17,7 @@ import {
 } from './components/Panels';
 
 type View = 'day' | 'week' | 'month';
-type Panel = null | 'drafts' | 'shopping' | 'checklists' | 'groups' | 'members' | 'settings' | 'notices';
+type Panel = null | 'drafts' | 'checklists' | 'groups' | 'members' | 'settings' | 'notices';
 type Sticky = { key: string; kind: 'done' | 'created' | 'reaction' | 'draft' | 'memos'; body: string; taskId?: string | null; occDate?: string | null; noticeId?: number };
 
 const LS = {
@@ -73,6 +72,7 @@ export default function App() {
   const shownNotices = useRef(new Set<number>());
   const captureRef = useRef<HTMLInputElement>(null);
   const sideCaptureRef = useRef<HTMLInputElement>(null);
+  const lastDayTap = useRef(0);
   const stateRef = useRef<State | null>(null);
   stateRef.current = state;
 
@@ -335,7 +335,7 @@ export default function App() {
     return () => { document.removeEventListener('visibilitychange', onVis); clearInterval(id); };
   }, [state?.me?.id, state?.me?.review_skip, brief, review]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ---- 持ち物チェックリストの自動表示（決まった時間） -------------------------------
+  // ---- リストの自動表示（決まった時間） -------------------------------
   useEffect(() => {
     if (!state || fullList || brief) return;
     const td = localToday();
@@ -384,7 +384,6 @@ export default function App() {
   const me = state.me!;
   const currentGroup = state.groups.find(g => g.id === groupFilter);
   const drafts = state.tasks.filter(t => t.status === 'draft' && t.user_id === me.id);
-  const shoppingOpen = state.tasks.filter(t => t.kind === 'shopping' && t.status === 'ready' && !t.done_at && isFor(t, me.id, state) && (groupFilter === 'all' || t.group_id === groupFilter));
   const reviewUnread = new Date().getHours() >= 17 && !reviewSeen && !LS.get(`review-seen:${me.id}:${today}`) ? 1 : 0;
   const unread = state.notifications.filter(n => !n.read_at).length + reviewUnread;
   const someday = state.tasks.filter(t => t.status === 'ready' && !t.date && !t.done_at && t.kind !== 'shopping' && isFor(t, me.id, state) && (groupFilter === 'all' || t.group_id === groupFilter));
@@ -422,11 +421,6 @@ export default function App() {
     act(P.setDone(o.task.id, o.day, !o.done, me.id), () => api(`tasks/${o.task.id}/done`, 'POST', { day: o.day, done: !o.done }));
   }
 
-  function afterShopping() {
-    const c = state!.checklists.find(x => x.trigger === 'after_shopping');
-    if (c) { setPanel(null); setFullList({ ...c, items: c.items.map(i => ({ ...i, checked: false })) }); }
-  }
-
   const calProps = {
     state, cursor, today, groupFilter, who,
     onOpen: (o: Occ) => { if (!isTmp(o.task.id)) setEditor({ task: o.task, occDay: o.day }); },
@@ -459,8 +453,7 @@ export default function App() {
         <button className="btn primary block big" onClick={() => setEditor({ day: cursor, groupId: groupFilter !== 'all' ? groupFilter : undefined })}>予定・タスクを追加<span className="orb"><Icon name="plus" size={20} stroke={2.4} /></span></button>
         <div style={{ height: 8 }} />
         <button className="side-link" onClick={() => setMemoBoard(true)}><Icon name="memo" size={19} />メモを見る {drafts.length > 0 && <span className="count alert" aria-label={`メモ${drafts.length}枚`}>{drafts.length}</span>}</button>
-        <button className="side-link" onClick={() => setPanel('shopping')}><Icon name="cart" size={19} />買い物リスト <span className="count">{shoppingOpen.length || ''}</span></button>
-        <button className="side-link" onClick={() => setPanel('checklists')}><Icon name="pack" size={19} />持ち物チェック</button>
+        <button className="side-link" onClick={() => setPanel('checklists')}><Icon name="pack" size={19} />リスト</button>
         <button className="side-link" onClick={() => setReview(true)}><Icon name="check" size={19} />今日の振り返り</button>
         <button className="side-link" onClick={() => setPanel('notices')}><Icon name="bell" size={19} />お知らせ {unread > 0 && <span className="count alert">{unread}</span>}</button>
         <div className="side-section">グループ</div>
@@ -495,7 +488,6 @@ export default function App() {
           <div className="title"><span className="only-mobile" style={{ display: 'inline-flex' }}><Logo size={30} /></span>{groupTitle}</div>
           <button className="icon-btn only-mobile" onClick={() => setPanel('notices')} aria-label="お知らせ"><Icon name="bell" />{unread > 0 && <span className="badge">{unread}</span>}</button>
           <button className="icon-btn" onClick={() => (currentGroup ? setPanel('members') : setPanel('groups'))} aria-label="メンバー"><Icon name="users" /></button>
-          <button className="icon-btn only-mobile" onClick={() => setPanel('settings')} aria-label="設定"><Icon name="gear" /></button>
           <button className="icon-btn green only-mobile" onClick={() => setPanel('groups')} aria-label="グループ切り替え"><Icon name="menu" stroke={2.4} /></button>
         </div>
         {sharedGroup && (
@@ -509,8 +501,14 @@ export default function App() {
         <div className="toolbar">
           <div className="seg">
             {(['day', 'week', 'month'] as View[]).map(v => (
-              <button key={v} data-nav className={view === v ? 'on' : ''} onClick={() => setView(v)}
-                onDoubleClick={v === 'day' ? () => { setView('day'); setCursor(localToday()); } : undefined}
+              <button key={v} data-nav className={view === v ? 'on' : ''} onClick={() => {
+                setView(v);
+                // DAY を続けて2回押したら今日へ（スマホはダブルクリックが届かないことがあるので、押した間隔で判定）
+                if (v === 'day') {
+                  const now = Date.now();
+                  if (now - lastDayTap.current < 400) { setCursor(localToday()); lastDayTap.current = 0; } else lastDayTap.current = now;
+                }
+              }}
                 title={v === 'day' ? 'ダブルクリックで今日' : undefined}>{v.toUpperCase()}</button>
             ))}
           </div>
@@ -543,18 +541,23 @@ export default function App() {
 
         {/* ---------- スマホ：下のボタン ---------- */}
         <nav className="bottombar">
-          <button onClick={() => setMemoBoard(true)}><span className="i"><Icon name="memo" /></span>メモ{drafts.length > 0 && <span className="badge">{drafts.length}</span>}</button>
-          <button onClick={() => setPanel('shopping')}><span className="i"><Icon name="cart" /></span>買い物</button>
-          <button className="capture-btn" onClick={openCapture} aria-label="ひとことメモ"><span className="i"><Icon name="plus" size={28} stroke={2.6} /></span>メモ</button>
-          <button onClick={() => setPanel('checklists')}><span className="i"><Icon name="pack" /></span>持ち物</button>
-          <button onClick={() => setEditor({ day: cursor, groupId: groupFilter !== 'all' ? groupFilter : undefined })}><span className="i"><Icon name="calendar" /></span>予定</button>
+          <button onClick={() => setPanel('checklists')}><span className="i"><Icon name="pack" /></span>リスト</button>
+          <button className="capture-btn" onClick={openCapture} aria-label={drafts.length ? `ひとことメモ・メモ${drafts.length}枚` : 'ひとことメモ'}>
+            <span className="i"><Icon name="plus" size={28} stroke={2.6} />{drafts.length > 0 && <span className="badge">{drafts.length}</span>}</span>
+          </button>
+          <button onClick={() => setPanel('settings')}><span className="i"><Icon name="gear" /></span>設定</button>
         </nav>
       </main>
 
       {/* ---------- ワンボタンメモ（スマホ）：常に置いておき、タップで即キーボード ---------- */}
       {captureOpen && <div className="capture-backdrop" onClick={() => { setCaptureOpen(false); captureRef.current?.blur(); }} />}
       <div className={'capture-sheet only-mobile' + (captureOpen ? ' open' : '')} aria-hidden={!captureOpen}>
-        <div className="cap-title">忘れる前に、ひとことだけ</div>
+        <div className="row">
+          <div className="cap-title grow">忘れる前に、ひとことだけ</div>
+          <button className="btn small" onClick={() => { setCaptureOpen(false); captureRef.current?.blur(); setMemoBoard(true); }}>
+            メモを見る{drafts.length > 0 && <span className="count alert">{drafts.length}</span>}
+          </button>
+        </div>
         <input ref={captureRef} type="text" placeholder="例：小麦粉、田中さんに電話" value={capture} onChange={e => setCapture(e.target.value)} enterKeyHint="done"
           onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); saveCapture(capture.trim()); } }} />
         <div className="row" style={{ marginTop: 10 }}>
@@ -577,7 +580,6 @@ export default function App() {
       )}
       {memoBoard && <MemoBoard state={state} onClose={() => setMemoBoard(false)} reload={refreshSoon} notify={notify}
         onOpen={(t: Task) => { if (isTmp(t.id)) return; setMemoBoard(false); setEditor({ task: t }); }} />}
-      {panel === 'shopping' && <ShoppingPanel state={state} groupFilter={groupFilter} onClose={() => setPanel(null)} reload={refreshSoon} onShoppingDone={afterShopping} notify={notify} />}
       {panel === 'checklists' && <ChecklistPanel state={state} onClose={() => setPanel(null)} reload={refreshSoon} onOpenFull={c => { setPanel(null); setFullList(c); }} />}
       {panel === 'groups' && <GroupDrawer state={state} current={groupFilter} onClose={() => setPanel(null)} reload={refreshSoon} onPick={id => { setGroupFilter(id); setPanel(id !== 'all' && !state.groups.find(g => g.id === id) ? 'members' : null); }} />}
       {panel === 'members' && currentGroup && <MembersPanel key={currentGroup.id} state={state} group={currentGroup} onClose={() => setPanel(null)} reload={refreshSoon} notify={notify} onLeft={() => { setPanel(null); setGroupFilter('all'); refreshSoon(); }} />}
