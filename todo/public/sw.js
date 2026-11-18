@@ -1,5 +1,5 @@
 // プッシュ通知を受け取り、アプリの部品を端末に保存して起動を速くする Service Worker
-const CACHE = 'app-v1';
+const CACHE = 'app-v2';
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil((async () => {
   for (const k of await caches.keys()) if (k !== CACHE) await caches.delete(k);
@@ -25,17 +25,24 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // ページ本体：保存したものをすぐ出し、裏で最新を取ってきて次回に備える
+  // ページ本体：まず最新を取りに行く（新しい版をすぐ反映するため）。
+  // 電波が悪くて3秒たっても返ってこないとき・つながらないときだけ、保存したページを出す
   if (req.mode === 'navigate') {
     event.respondWith((async () => {
       const cache = await caches.open(CACHE);
-      const hit = await cache.match('/');
       const fresh = fetch(req).then(res => {
         if (res.ok && url.pathname === '/') cache.put('/', res.clone());
         return res;
       });
-      if (hit && url.pathname === '/') { event.waitUntil(fresh.catch(() => {})); return hit; }
-      try { return await fresh; } catch { return hit || Response.error(); }
+      event.waitUntil(fresh.catch(() => {}));
+      const slow = new Promise(r => setTimeout(r, 3000, null));
+      try {
+        const res = await Promise.race([fresh, slow]);
+        if (res) return res;
+      } catch { /* つながらない */ }
+      const hit = url.pathname === '/' ? await cache.match('/') : null;
+      if (hit) return hit;
+      try { return await fresh; } catch { return Response.error(); }
     })());
   }
 });

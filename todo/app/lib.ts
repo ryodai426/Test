@@ -27,6 +27,7 @@ export type State = {
   checklists: Checklist[]; notifications: Notice[]; pushKey: string | null;
   kinds: Kind[];
   followups: Followup[];
+  build?: string; // サーバーの版（画面の版と違えば、画面が古い）
 };
 
 export class ApiError extends Error {

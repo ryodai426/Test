@@ -28,6 +28,19 @@ const LS = {
 };
 export const CACHE_KEY = 'state-cache-v1';
 
+/**
+ * 新しい版を公開したのに、端末が古い画面のままなら読み込み直す。
+ * 入力の途中で画面が変わらないよう、開いたときと、アプリに戻ってきたときだけ。同じ版では1回まで（繰り返さない）
+ */
+function reloadIfOutdated(serverBuild: string | undefined): boolean {
+  const mine = process.env.NEXT_PUBLIC_BUILD;
+  if (!serverBuild || !mine || serverBuild === mine || isDemo()) return false;
+  const key = 'reloaded-for';
+  try { if (sessionStorage.getItem(key) === serverBuild) return false; sessionStorage.setItem(key, serverBuild); } catch { return false; }
+  location.reload();
+  return true;
+}
+
 export default function App() {
   const [state, setState] = useState<State | null>(null);
   const [needLogin, setNeedLogin] = useState(false);
@@ -69,10 +82,11 @@ export default function App() {
   }, []);
 
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { canReload?: boolean }) => {
     const started = Date.now();
     try {
       const s = await api<State>(`state?day=${localToday()}`);
+      if (opts?.canReload && reloadIfOutdated(s.build)) return;
       // 取り直している間に画面を書き換えていたら、この結果は古いので使わない（もう一度取り直す）
       if (changedSince(started)) { if (refreshTimer.current) clearTimeout(refreshTimer.current); refreshTimer.current = setTimeout(() => load(), 400); return; }
       if (!s.me) { setNeedLogin(true); setState(null); LS.del(CACHE_KEY); return; }
@@ -106,7 +120,7 @@ export default function App() {
     setView(v || (window.innerWidth >= 900 ? 'week' : 'day'));
     setGroupFilter(LS.get('group') || 'all');
     if (params.get('date')) { setCursor(params.get('date')!); setView('day'); }
-    load();
+    load({ canReload: true });
     if (!isDemo()) sw()?.register('/sw.js').catch(() => {});
   }, [load, params]);
 
@@ -116,10 +130,12 @@ export default function App() {
   // 表示中は20秒ごとに更新（スマホで入れた予定がPCにもすぐ出るように）
   useEffect(() => {
     const tick = () => { if (document.visibilityState === 'visible') load(); };
+    // アプリに戻ってきたとき（ホーム画面のアプリは閉じずに再開することが多い）は、新しい版になっていないかも確かめる
+    const back = () => { if (document.visibilityState === 'visible') load({ canReload: true }); };
     const id = setInterval(tick, 20000);
-    document.addEventListener('visibilitychange', tick);
-    window.addEventListener('focus', tick);
-    return () => { clearInterval(id); document.removeEventListener('visibilitychange', tick); window.removeEventListener('focus', tick); };
+    document.addEventListener('visibilitychange', back);
+    window.addEventListener('focus', back);
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', back); window.removeEventListener('focus', back); };
   }, [load]);
 
   // ---- ログイン直後の URL パラメータ（招待・通知から開いた時など） -------------
