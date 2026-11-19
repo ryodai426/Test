@@ -55,6 +55,10 @@ export const P = {
     }
     return { ...s, tasks: s.tasks.map(x => (x.id === taskId ? { ...x, done_at: done ? new Date().toISOString() : null, done_by: done ? me : null } : x)) };
   },
+  /** メモを完了にする（日付のない予定にして、完了） */
+  doneMemo: (taskId: string, fields: Partial<Task>, me: string): Patch => s => ({
+    ...s, tasks: s.tasks.map(t => (t.id === taskId ? { ...t, ...fields, status: 'ready' as const, done_at: new Date().toISOString(), done_by: me, updated_at: new Date().toISOString() } : t)),
+  }),
   removeTask: (taskId: string): Patch => s => ({ ...s, tasks: s.tasks.filter(t => t.id !== taskId), items: s.items.filter(i => i.task_id !== taskId) }),
   updateTask: (taskId: string, fields: Partial<Task>): Patch => s => ({ ...s, tasks: s.tasks.map(t => (t.id === taskId ? { ...t, ...fields, updated_at: new Date().toISOString() } : t)) }),
   addTask: (t: Task, items: string[] = []): Patch => s => ({
