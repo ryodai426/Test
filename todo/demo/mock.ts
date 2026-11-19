@@ -97,6 +97,7 @@ function notifyOthers(groupId: string, kind: string, taskId: string, body: strin
 }
 
 function setDone(t: Any, day: string | null, isDone: boolean) {
+  if (t.status === 'draft' && isDone) { t.status = 'ready'; t.detailed_at = new Date().toISOString(); } // メモの完了
   if (t.repeat) {
     const i = done.findIndex(d => d.task_id === t.id && d.occ_date === day);
     if (isDone && i < 0) done.push({ task_id: t.id, occ_date: day, user_id: 'me', done_at: new Date().toISOString() });

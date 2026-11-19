@@ -155,6 +155,16 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
     }
   }
 
+  // メモの「完了」：書いた内容を保存して、完了にする（メモの一覧から消える）
+  function doneMemo() {
+    if (!t) return;
+    onSaved('完了！おつかれさまです 🎉');
+    act(P.doneMemo(t.id, { title, description }, meId), async () => {
+      await api(`tasks/${t.id}`, 'PATCH', { title, description });
+      return api(`tasks/${t.id}/done`, 'POST', { done: true });
+    });
+  }
+
   async function remove(scope?: Scope) {
     if (!t) return;
     if (isRepeat && !scope) { setAskScope('delete'); return; }
@@ -433,6 +443,7 @@ export default function TaskEditor({ state, init, onClose, onSaved, onRefresh }:
         <div className="sheet-foot">
           {t && <button className="btn danger" onClick={() => remove()}>削除</button>}
           <div className="grow" />
+          {memoMode && <button className="btn memo-done" onClick={doneMemo}><Icon name="check" size={16} stroke={2.6} />完了</button>}
           <button className="btn" onClick={onClose}>キャンセル</button>
           <button className="btn primary" onClick={() => save()} disabled={busy}>保存</button>
         </div>

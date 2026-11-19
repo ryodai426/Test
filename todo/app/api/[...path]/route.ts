@@ -368,7 +368,12 @@ route('DELETE', 'tasks/:id', async ({ params }) => {
 });
 
 async function setDone(u: User, t: any, day: string | null, done: boolean) {
-  if (t.status === 'draft') throw bad('未記入のメモは、先に詳細を入力してください');
+  if (t.status === 'draft') {
+    // メモを「完了」にしたとき：日付のない予定にして、完了にする（メモの一覧から消え、今日こなしたことに数える）
+    if (!done || t.user_id !== u.id) throw bad('メモは完了にしかできません');
+    await q("UPDATE tasks SET status = 'ready', detailed_at = now(), updated_at = now() WHERE id = $1", [t.id]);
+    t.status = 'ready';
+  }
   if (t.repeat) {
     if (!day || !DATE.test(day)) throw bad('日付が必要です');
     if (done) await q('INSERT INTO task_done (task_id, occ_date, user_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING', [t.id, day, u.id]);
