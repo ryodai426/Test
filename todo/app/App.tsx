@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { addDays, DRAFT_STEPS, occursOn, reminderMessage, reminderTimes, KIND_PRESETS } from '@/lib/time';
-import { api, ApiError, asksMe, followupOf, isDemo, isFor, sw, localToday, occurrences, taskColor, type Checklist, type Occ, type State, type Task } from './lib';
+import { api, ApiError, asksMe, followupOf, isDemo, isFor, sw, localToday, occurrences, taskColor, titleOf, groupColor, type Checklist, type Occ, type State, type Task } from './lib';
 import Login from './components/Login';
 import Icon, { Logo, Scene } from './components/Icon';
 import Emoji, { EmojiText } from './components/Emoji';
@@ -261,7 +261,7 @@ export default function App() {
             const key = `fired:${t.id}:${day}:${r.key}`;
             if (r.at > now || r.at < now - 120000 || LS.get(key)) continue;
             LS.set(key, '1');
-            if (inAppRef.current) setBanner({ icon: (!t.kind_id && KIND_PRESETS[t.kind]?.icon) || '⏰', title: r.key === '0' ? `${t.title}の時間です！` : t.title, body: reminderMessage(t.title, r.key, t.time) });
+            if (inAppRef.current) setBanner({ icon: (!t.kind_id && KIND_PRESETS[t.kind]?.icon) || '⏰', title: r.key === '0' ? `${titleOf(t, s)}の時間です！` : titleOf(t, s), body: reminderMessage(titleOf(t, s), r.key, t.time) });
           }
         }
       }
@@ -497,7 +497,7 @@ export default function App() {
 
   const groupTitle = (
     <>
-      {currentGroup ? <span className="dot" style={{ background: currentGroup.color }} /> : null}
+      {currentGroup ? <span className="dot" style={{ background: groupColor(currentGroup) }} /> : null}
       <span className="title-name">{currentGroup ? currentGroup.name : 'すべて表示'}</span>
       {whoName && <span className="title-who">・{whoName}さんの予定</span>}
     </>
@@ -525,7 +525,7 @@ export default function App() {
         <button className={'side-link' + (groupFilter === 'all' ? ' on' : '')} onClick={() => setGroupFilter('all')}><Icon name="calendar" size={19} />すべて表示</button>
         {state.groups.map(g => (
           <button key={g.id} className={'side-link' + (groupFilter === g.id ? ' on' : '')} onClick={() => setGroupFilter(g.id)}>
-            <span className="dot" style={{ background: g.color }} />{g.name}<span className="count">{g.is_personal ? '' : `${g.members.length}人`}</span>
+            <span className="dot" style={{ background: groupColor(g) }} />{g.name}<span className="count">{g.is_personal ? '' : `${g.members.length}人`}</span>
           </button>
         ))}
         <button className="side-link dim" onClick={() => setPanel('groups')}><Icon name="plus" size={19} />新しいグループ</button>
@@ -534,7 +534,7 @@ export default function App() {
             <div className="side-section">いつかやる</div>
             {someday.map(t => (
               <button key={t.id} className="side-link" onClick={() => setEditor({ task: t })}>
-                <span className="dot" style={{ background: taskColor(t, state) }} />{t.title}
+                <span className="dot" style={{ background: taskColor(t, state) }} />{titleOf(t, state)}
               </button>
             ))}
           </>
@@ -601,7 +601,7 @@ export default function App() {
                 {someday.map(t => (
                   <button key={t.id} className="todo" onClick={() => setEditor({ task: t })}>
                     <span className="dot" style={{ background: taskColor(t, state) }} />
-                    <span className="grow">{t.title}</span>
+                    <span className="grow">{titleOf(t, state)}</span>
                   </button>
                 ))}
               </div>
@@ -690,7 +690,7 @@ export default function App() {
               <div className="confirm-list">
                 {items.map(x => (
                   <div key={x.c.taskId + x.c.day} className="confirm-row">
-                    <div className="confirm-title">{x.t!.starred && <span className="star-mark">★</span>}{x.t!.title}<span>{x.t!.time}〜</span></div>
+                    <div className="confirm-title">{x.t!.starred && <span className="star-mark">★</span>}{titleOf(x.t!, state)}<span>{x.t!.time}〜</span></div>
                     <div className="confirm-btns">
                       <button className="btn primary small" onClick={() => answer([x], 'done')}>完了</button>
                       <button className="btn small" onClick={() => answer([x], 'later')}>まだ</button>

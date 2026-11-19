@@ -4,7 +4,7 @@ import { q, one, tx, databaseUrl, pool, ready } from '@/lib/db';
 import { consumeLinkCode, createSession, currentUser, destroySession, issueLinkCode, sessionTokenHash, touchSession, type User } from '@/lib/auth';
 import { loadState } from '@/lib/state';
 import { pushEnabled, pushTo, runDueReminders, vapid, vapidProblem } from '@/lib/notify';
-import { KIND_PRESETS, nowIn } from '@/lib/time';
+import { KIND_PRESETS, nowIn, titleOr } from '@/lib/time';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +21,9 @@ const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const KINDS = Object.keys(KIND_PRESETS);
 const REMINDERS = ['eve', '60', '30', '10', '5', '0'];
 const EMOJIS = ['👍', '❤️', '💪', '👏'];
+// グループの色（app/lib.ts の GROUP_COLORS と同じ。黄色は個人の色なので使わない）
+const GROUP_COLORS = ['#8ED462', '#2BA0FF', '#FF705D', '#A77BEA', '#FF9F43', '#A0522D', '#9AA0A6', '#17B5A6', '#34508F', '#F06292', '#EBC1FF'];
+const okGroupColor = (c: unknown) => typeof c === 'string' && GROUP_COLORS.includes(c.toUpperCase());
 
 const str = (v: unknown, max = 200) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 
@@ -232,7 +235,6 @@ route('POST', 'tasks', async ({ body }) => {
   const groupId = body.group_id ? String(body.group_id) : await personalGroupId(u.id);
   const g = await requireMember(u.id, groupId);
   const f = cleanTask(body, false);
-  if (!f.title) throw bad('タイトルを入力してください');
   const kindId = await kindIdFor(groupId, body.kind_id);
   // 表示する人：指定がなければ「自分だけ」（共通にするときは 'all'）
   const assignees = await cleanAssignees(groupId, g.is_personal, 'assignees' in body ? body.assignees : [u.id], u.id);
@@ -245,7 +247,7 @@ route('POST', 'tasks', async ({ body }) => {
       await q('INSERT INTO task_items (task_id, label, position) VALUES ($1,$2,$3)', [t!.id, label, i]);
     }
   }
-  if (!g.is_personal && g.notify_create) await notifyMembers(groupId, u.id, 'created', t!.id, `${u.name}さんが「${f.title}」を設定しました`, null, assignees);
+  if (!g.is_personal && g.notify_create) await notifyMembers(groupId, u.id, 'created', t!.id, `${u.name}さんが「${titleOr({ title: f.title as string, kind: f.kind as string })}」を設定しました`, null, assignees);
   return t;
 });
 
@@ -278,7 +280,6 @@ async function patchTask(u: User, t: any, body: any) {
   }
   const becomingReady = t.status === 'draft' && body.status === 'ready';
   if (becomingReady) {
-    if (!(f.title ?? t.title)) throw bad('タイトルを入力してください');
     f.status = 'ready';
     f.detailed_at = new Date().toISOString();
   }
@@ -290,7 +291,7 @@ async function patchTask(u: User, t: any, body: any) {
     const g = await one('SELECT * FROM groups WHERE id = $1', [groupId]);
     if (g && !g.is_personal && g.notify_create) {
       const who = 'assignees' in f ? (f.assignees as string[] | null) : t.assignees;
-      await notifyMembers(groupId, u.id, 'created', t.id, `${u.name}さんが「${f.title ?? t.title}」を設定しました`, null, who);
+      await notifyMembers(groupId, u.id, 'created', t.id, `${u.name}さんが「${titleOr({ title: (f.title as string) ?? t.title, kind: (f.kind as string) ?? t.kind })}」を設定しました`, null, who);
     }
   }
 }
@@ -378,7 +379,7 @@ async function setDone(u: User, t: any, day: string | null, done: boolean) {
   }
   if (done && !t.is_personal && t.notify_done) {
     const occ = t.repeat ? day : (t.date ?? nowIn(u.tz).date);
-    await notifyMembers(t.group_id, u.id, 'done', t.id, `${u.name}さんが「${t.title}」を完了しました！`, occ);
+    await notifyMembers(t.group_id, u.id, 'done', t.id, `${u.name}さんが「${titleOr(t)}」を完了しました！`, occ);
   }
 }
 
@@ -473,7 +474,7 @@ route('POST', 'reactions', async ({ body }) => {
     const target = doer || t.user_id;
     if (target !== u.id) {
       await q('INSERT INTO notifications (user_id, kind, actor_id, task_id, occ_date, body) VALUES ($1, $2, $3, $4, $5, $6)',
-        [target, 'reaction', u.id, t.id, day, `${u.name}さんが「${t.title}」に ${body.emoji}`]);
+        [target, 'reaction', u.id, t.id, day, `${u.name}さんが「${titleOr(t)}」に ${body.emoji}`]);
     }
   }
   return { ok: true };
@@ -485,9 +486,12 @@ route('POST', 'groups', async ({ body }) => {
   const u = await requireUser();
   const name = str(body.name, 40);
   if (!name) throw bad('グループ名を入力してください');
+  // 色：選んだ色（黄色以外）。選ばなければ、その人が入っているグループでまだ使っていない色
+  const used = (await q<{ color: string }>('SELECT g.color FROM groups g JOIN memberships m ON m.group_id = g.id WHERE m.user_id = $1', [u.id])).map(r => r.color.toUpperCase());
+  const color = okGroupColor(body.color) ? String(body.color).toUpperCase() : GROUP_COLORS.find(c => !used.includes(c)) || GROUP_COLORS[used.length % GROUP_COLORS.length];
   const g = await tx(async c => {
     const g = (await c.query('INSERT INTO groups (name, description, color, owner_id) VALUES ($1,$2,$3,$4) RETURNING id',
-      [name, str(body.description, 200), COLORS.test(body.color) ? body.color : '#2BA0FF', u.id])).rows[0];
+      [name, str(body.description, 200), color, u.id])).rows[0];
     await c.query('INSERT INTO memberships (group_id, user_id) VALUES ($1,$2)', [g.id, u.id]);
     return g;
   });
@@ -501,7 +505,7 @@ route('PATCH', 'groups/:id', async ({ body, params }) => {
   await q(`UPDATE groups SET name = $2, description = $3, color = $4, notify_create = $5, notify_done = $6 WHERE id = $1`, [
     g.id, name,
     'description' in body ? str(body.description, 200) : g.description,
-    COLORS.test(body.color) ? body.color : g.color,
+    !g.is_personal && okGroupColor(body.color) ? String(body.color).toUpperCase() : g.color,
     'notify_create' in body ? !!body.notify_create : g.notify_create,
     'notify_done' in body ? !!body.notify_done : g.notify_done,
   ]);

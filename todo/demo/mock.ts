@@ -156,7 +156,6 @@ async function handle(path: string, method: string, b: Any): Promise<any> {
 
   if (p === 'tasks' && M === 'POST') {
     if (b.quick) { const t = task({ status: 'draft', title: (b.title || '').slice(0, 120), description: String(b.description || ''), captured_at: new Date().toISOString(), detailed_at: null, reminders: [] }); tasks.push(t); return { id: t.id }; }
-    if (!b.title?.trim()) fail('タイトルを入力してください');
     const gid = b.group_id || 'gp';
     const t = task({ ...pick(b, TASK_KEYS), group_id: gid, assignees: assigneesFrom(gid, 'assignees' in b ? b.assignees : ['me']), detailed_at: new Date().toISOString(), captured_at: new Date().toISOString() });
     tasks.push(t);
@@ -168,7 +167,7 @@ async function handle(path: string, method: string, b: Any): Promise<any> {
     const t = findTask(seg[1]);
     if (M === 'DELETE') { tasks.splice(tasks.indexOf(t), 1); return { ok: true }; }
     if (M === 'PATCH') {
-      if (t.status === 'draft' && b.status === 'ready') { if (!(b.title ?? t.title)) fail('タイトルを入力してください'); t.status = 'ready'; t.detailed_at = new Date().toISOString(); }
+      if (t.status === 'draft' && b.status === 'ready') { t.status = 'ready'; t.detailed_at = new Date().toISOString(); }
       Object.assign(t, pick(b, TASK_KEYS), { updated_at: new Date().toISOString() });
       if ('assignees' in b || 'group_id' in b) t.assignees = assigneesFrom(t.group_id, 'assignees' in b ? b.assignees : t.assignees);
       if (!t.time) t.reminders = [];

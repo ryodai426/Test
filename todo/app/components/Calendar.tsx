@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { addDays, parseDate, weekday, WEEK_LABELS, KIND_PRESETS } from '@/lib/time';
+import { addDays, parseDate, titleOr, weekday, WEEK_LABELS, KIND_PRESETS } from '@/lib/time';
 import Emoji from './Emoji';
 import Icon from './Icon';
 import { byImportance, followupOf, occurrences, toMin, fromMin, type Occ, type State } from '../lib';
@@ -11,7 +11,7 @@ function Title({ o, icon = true, size = 14 }: { o: Occ; icon?: boolean; size?: n
     <>
       {o.task.starred && <span className="star-mark" aria-label="星付き">★</span>}
       {icon && !o.task.kind_id && <><Emoji char={KIND_PRESETS[o.task.kind]?.icon} size={size} />{' '}</>}
-      {o.task.title}
+      {titleOr(o.task)}
     </>
   );
 }
@@ -363,7 +363,7 @@ export function WeekView(p: Props) {
             <div key={i} className="allday-cell">
               {l.filter(o => !o.task.time).map(o => (
                 <button key={o.task.id} className={'pill' + (o.done ? ' done' : '')} style={{ background: o.color + '4d' }} onClick={() => p.onOpen(o)}>
-                  <span className="dot" style={{ background: o.color, width: 6, height: 6 }} />{o.task.title}
+                  <span className="dot" style={{ background: o.color, width: 6, height: 6 }} />{titleOr(o.task)}
                 </button>
               ))}
             </div>
@@ -418,7 +418,7 @@ function MonthWeek({ week, p, month }: { week: string[]; p: Props; month: string
             {top > 0 && <span className="mspace" style={{ ['--lanes' as string]: top }} />}
             {singles.slice(0, room).map(o => (
               <span key={o.task.id} className="mtitle" style={{ background: o.color + '4d', textDecoration: o.done ? 'line-through' : undefined, opacity: o.done ? .5 : 1 }}>
-                {o.task.starred && <span className="star-mark">★</span>}{o.task.time && <span className="mt-time">{o.task.time + ' '}</span>}{o.task.title}
+                {o.task.starred && <span className="star-mark">★</span>}{o.task.time && <span className="mt-time">{o.task.time + ' '}</span>}{titleOr(o.task)}
               </span>
             ))}
             {hidden > 0 && <span className="mtitle muted mmore">ほか{hidden}件</span>}
@@ -434,7 +434,7 @@ function MonthWeek({ week, p, month }: { week: string[]; p: Props; month: string
               ['--lane' as string]: lane, left: `calc(${(s / 7) * 100}% + ${starts ? 3 : 0}px)`, width: `calc(${((e - s + 1) / 7) * 100}% - ${(starts ? 3 : 0) + (ends ? 3 : 0)}px)`,
               background: o.color + '66', textDecoration: o.done ? 'line-through' : undefined, opacity: o.done ? .5 : 1,
             }}>
-            {o.task.starred && <span className="star-mark">★</span>}{o.task.title}
+            {o.task.starred && <span className="star-mark">★</span>}{titleOr(o.task)}
           </span>
         );
       })}

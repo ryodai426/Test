@@ -1,5 +1,5 @@
 'use client';
-import { KIND_PRESETS, WEEK_LABELS, weekday } from '@/lib/time';
+import { KIND_PRESETS, WEEK_LABELS, weekday, titleOr } from '@/lib/time';
 import { occurrences, type State } from '../lib';
 import Emoji from './Emoji';
 import { Scene } from './Icon';
@@ -52,7 +52,7 @@ export default function TodayBrief({ state, today, onClose }: { state: State; to
               }}>
               <div className="brief-time">{o.task.time || '終日'}</div>
               <div className="brief-title">
-                {o.task.starred && <span className="star-mark">★</span>}{!o.task.kind_id && <><Emoji char={KIND_PRESETS[o.task.kind]?.icon} size={18} />{' '}</>}{o.task.title}
+                {o.task.starred && <span className="star-mark">★</span>}{!o.task.kind_id && <><Emoji char={KIND_PRESETS[o.task.kind]?.icon} size={18} />{' '}</>}{titleOr(o.task)}
               </div>
               <div className="brief-meta">
                 {[kindName(state, o.task.kind_id), o.group?.name, o.done ? '完了' : ''].filter(Boolean).join('・')}

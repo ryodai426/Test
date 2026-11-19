@@ -117,6 +117,13 @@ export const KIND_PRESETS: Record<string, { label: string; icon: string; reminde
   reminder: { label: 'リマインダー', icon: '⏰', reminders: [] },
 };
 
+/** タイトルが空の予定の呼び名：自分たちで足した種類ならその名前、一般なら「予定」、ほかは種類の名前 */
+export function titleOr(t: { title: string; kind: string }, kindName?: string | null): string {
+  if (t.title) return t.title;
+  if (kindName) return kindName;
+  return !t.kind || t.kind === 'general' ? '予定' : KIND_PRESETS[t.kind]?.label || '予定';
+}
+
 export function reminderMessage(title: string, key: string, time: string): string {
   if (key === 'eve') return `明日は「${title}」です（${time}）`;
   if (key === '0') return `「${title}」の時間です！`;
